@@ -21,6 +21,7 @@ const db = mysql.createPool({
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(__dirname));
 
 
 // 1. API สำหรับ ESP32 ส่งข้อมูล (POST)
