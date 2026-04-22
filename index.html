@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Air Quality Monitor</title>
+<!-- <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css "> -->
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+if (localStorage.getItem('theme') === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+}
+</script>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><strong>AirWatch</strong> · smart monitor</div>
+  <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;justify-content:flex-end;">
+    <button onclick="toggleTheme()" class="theme-toggle" style="background:none; border:none; color:var(--text); cursor:pointer; display:flex; align-items:center; justify-content:center; padding: 4px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+    </button>
+    <a href="history.html" style="color: var(--text); text-decoration: none; font-size: 11px; font-family: var(--mono); background: rgba(255,255,255,0.1); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); transition: background 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">HISTORY</a>
+    <span id="time-display" style="font-family:var(--mono);font-size:12px;color:var(--muted);"></span>
+    <div class="live-pill" style="color:var(--amber);background:var(--amber-dim);border-color:rgba(154,103,0,0.25);">CONNECTING...</div>
+  </div>
+</div>
+
+<div class="container">
+
+    <div class="alert-banner" id="alert-banner">
+    <div class="alert-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f85149" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+    </div>
+    <div class="alert-text">
+      <div class="alert-title" id="alert-title">ค่าฝุ่นเกินเกณฑ์</div>
+      <div class="alert-sub" id="alert-sub">PM2.5 ในบ้านสูงเกินกำหนด กรุณาเปิดพัดลมกรองอากาศ</div>
+    </div>
+    <button class="alert-close" onclick="dismissAlert()">✕</button>
+  </div>
+
+    <div class="notif-log" id="notif-log">
+    <div class="notif-log-head">
+      <span class="notif-log-title">ALERT LOG</span>
+      <button class="notif-clear" onclick="clearLog()">clear all</button>
+    </div>
+    <div class="notif-items" id="notif-items"></div>
+  </div>
+
+
+    <div class="pm-grid">
+    <div class="pm-card" id="card-in" style="--accent-color:var(--green);">
+      <div class="pm-label">INDOOR · ในบ้าน</div>
+      <div class="pm-num" id="in_pm25">-</div>
+      <div class="pm-unit">µg/m³ · PM2.5</div>
+      <div class="pm-bar-track"><div class="pm-bar-fill" id="bar-in" style="width:0%;background:var(--green);"></div></div>
+      <div class="pm-meta">
+        <div class="pm-meta-item">CO₂ <span id="in_co2">-</span> ppm</div>
+        <div class="pm-meta-item">Gas <span id="in_gas">-</span></div>
+      </div>
+    </div>
+    <div class="pm-card" id="card-out" style="--accent-color:var(--blue);">
+      <div class="pm-label">OUTDOOR · นอกบ้าน</div>
+      <div class="pm-num" id="out_pm25">-</div>
+      <div class="pm-unit">µg/m³ · PM2.5</div>
+      <div class="pm-bar-track"><div class="pm-bar-fill" id="bar-out" style="width:0%;background:var(--amber);"></div></div>
+      <div class="pm-meta">
+        <div class="pm-meta-item">Gas <span id="out_gas">-</span></div>
+    </div>
+  </div>
+</div>
+
+  <div class="bottom-layout">
+    <div class="bottom-left">
+      <div class="mini-grid">
+        <div class="mini-card">
+          <div class="mini-label">AQI</div>
+          <div class="mini-val" id="aqi-val">-</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-label">HUMIDITY</div>
+          <div class="mini-val" id="humidity-val">--%</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-label">TEMP</div>
+          <div class="mini-val" id="temp-val">--°C</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-label">ALERTS TODAY</div>
+          <div class="mini-val" id="alert-count">0</div>
+        </div>
+      </div>
+
+      <div class="fans-label"></div>
+      <div class="fan-grid">
+        <div class="fan-card" id="fc-filt" style="--fan-color:var(--green);--fan-bg:var(--green-dim);">
+          <div class="fan-top">
+            <div class="fan-icon-wrap" id="fi-filt">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-linecap="round">
+                <path d="M3 6h18M7 12h10M11 18h2"/>
+              </svg>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tog-lbl" id="tl-filt">OFF</span>
+              <label class="toggle" style="--fan-color:var(--green); pointer-events: none;">
+                <input type="checkbox" id="tog-filt" disabled>
+                <span class="tslider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="fan-name">Filtration fan</div>
+          <div class="fan-desc">กรองฝุ่น PM2.5 · HEPA filter</div>
+          <div class="fan-badge" id="badge-filt"><span class="badge-dot"></span>Standby</div>
+        </div>
+
+        <div class="fan-card" id="fc-vent" style="--fan-color:var(--blue);--fan-bg:var(--blue-dim);">
+          <div class="fan-top">
+            <div class="fan-icon-wrap" id="fi-vent">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-linecap="round">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tog-lbl" id="tl-vent">OFF</span>
+              <label class="toggle" style="--fan-color:var(--blue); pointer-events: none;">
+                <input type="checkbox" id="tog-vent" disabled>
+                <span class="tslider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="fan-name">Ventilation fan</div>
+          <div class="fan-desc">ระบายอากาศ · circulation</div>
+          <div class="fan-badge" id="badge-vent"><span class="badge-dot"></span>Standby</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom-right">
+      <div class="chart-card">
+        <div class="chart-header">PM2.5 History (20 ล่าสุด)</div>
+        <div class="chart-container">
+          <canvas id="pmChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ===== STATE =====
+let threshGood = 25, threshMod = 50, threshAlert = 35;
+let alertCount = 0;
+let lastAlertTime = 0;
+let alertDismissed = false;
+
+// ===== THEME TOGGLE =====
+function toggleTheme() {
+    let current = document.documentElement.getAttribute('data-theme');
+    let target = current === 'light' ? 'dark' : 'light';
+    if (target === 'dark') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', 'light');
+    localStorage.setItem('theme', target);
+    
+    // Auto-refresh chart colors if we want, but doing a page reload is cleaner
+    // or just let the CSS handle it cleanly.
+}
+
+// ===== NOTIFICATION PERMISSION =====
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
+// ===== HELPERS =====
+function fmt(d) {
+  return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function getColor(val) {
+  if (val <= threshGood) return 'var(--green)';
+  if (val <= threshMod) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+function getClass(val) {
+  if (val <= threshGood) return 'c-green';
+  if (val <= threshMod) return 'c-amber';
+  return 'c-red';
+}
+
+function getStatus(val) {
+  if (val <= threshGood) return 'Good';
+  if (val <= threshMod) return 'Moderate';
+  return 'Unhealthy';
+}
+
+// ===== US EPA AQI CALCULATION =====
+function calculateAQI(pm) {
+  let cLow, cHigh, iLow, iHigh;
+  
+  if (pm <= 12.0) { cLow = 0.0; cHigh = 12.0; iLow = 0; iHigh = 50; }
+  else if (pm <= 35.4) { cLow = 12.1; cHigh = 35.4; iLow = 51; iHigh = 100; }
+  else if (pm <= 55.4) { cLow = 35.5; cHigh = 55.4; iLow = 101; iHigh = 150; }
+  else if (pm <= 150.4) { cLow = 55.5; cHigh = 150.4; iLow = 151; iHigh = 200; }
+  else if (pm <= 250.4) { cLow = 150.5; cHigh = 250.4; iLow = 201; iHigh = 300; }
+  else if (pm <= 350.4) { cLow = 250.5; cHigh = 350.4; iLow = 301; iHigh = 400; }
+  else { cLow = 350.5; cHigh = 500.4; iLow = 401; iHigh = 500; }
+
+  if (pm > 500.4) return 500; // Cap at max 500
+
+  return Math.round(((iHigh - iLow) / (cHigh - cLow)) * (pm - cLow) + iLow);
+}
+
+
+// ===== FAN CONTROL =====
+function toggleFan(id) {
+  const isOn = document.getElementById('tog-' + id).checked;
+  syncFanUI(id, isOn);
+}
+
+function syncFanUI(id, isOn) {
+  const card = document.getElementById('fc-' + id);
+  const lbl = document.getElementById('tl-' + id);
+  const badge = document.getElementById('badge-' + id);
+  
+  if (document.getElementById('tog-' + id).checked !== isOn) {
+      document.getElementById('tog-' + id).checked = isOn;
+  }
+  
+  lbl.textContent = isOn ? 'ON' : 'OFF';
+  badge.innerHTML = isOn
+    ? '<span class="badge-dot"></span>Running'
+    : '<span class="badge-dot"></span>Standby';
+  if (isOn) card.classList.add('on'); else card.classList.remove('on');
+}
+
+
+// ===== ALERT SYSTEM =====
+function triggerAlert(inPm, reason) {
+  const now = Date.now();
+  alertCount++;
+  alertDismissed = false;
+  document.getElementById('alert-count').textContent = alertCount;
+
+  const banner = document.getElementById('alert-banner');
+  document.getElementById('alert-title').textContent = '⚠️ ' + reason;
+  document.getElementById('alert-sub').textContent =
+    'PM2.5 ในบ้าน = ' + inPm + ' µg/m³ · เกินเกณฑ์ ' + threshAlert + ' µg/m³';
+  banner.classList.add('show');
+  document.body.classList.add('alert-state');
+
+  // Browser Notification
+  if ('Notification' in window && Notification.permission === 'granted' && (now - lastAlertTime > 60000)) {
+    new Notification('⚠️ AirWatch Alert', {
+      body: reason + ' · PM2.5 = ' + inPm + ' µg/m³',
+      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💨</text></svg>'
+    });
+    lastAlertTime = now;
+  }
+
+  addLog(inPm, reason);
+}
+
+function dismissAlert() {
+  document.getElementById('alert-banner').classList.remove('show');
+  document.body.classList.remove('alert-state');
+  alertDismissed = true;
+}
+
+function addLog(pm, reason) {
+  const log = document.getElementById('notif-log');
+  const items = document.getElementById('notif-items');
+  const now = new Date();
+  const severity = pm > threshMod ? 'var(--red)' : 'var(--amber)';
+  const item = document.createElement('div');
+  item.className = 'notif-item';
+  item.innerHTML = `
+    <div class="notif-dot" style="background:${severity};"></div>
+    <div class="notif-msg">${reason} · <strong>${pm}</strong> µg/m³</div>
+    <div class="notif-time">${fmt(now)}</div>
+  `;
+  items.insertBefore(item, items.firstChild);
+  log.classList.add('has-items');
+}
+
+function clearLog() {
+  document.getElementById('notif-items').innerHTML = '';
+  document.getElementById('notif-log').classList.remove('has-items');
+}
+
+// ===== CLOCK =====
+function updateClock() {
+  document.getElementById('time-display').textContent = fmt(new Date());
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ===== UPDATE UI =====
+function updateUI(d) {
+  if (!d) return; // UI Stability: ป้องกันกรณีข้อมูลเป็น null/undefined
+
+  // Field Names: ใช้ชื่อ key ตรงกับที่ส่งมาจาก ESP32/Socket
+  const inPm = d.in_pm25 || d.in_pm || 0; 
+  const outPm = d.out_pm25 || d.out_pm || 0;
+
+  // Update PM displays
+  document.getElementById('in_pm25').textContent = inPm;
+  document.getElementById('in_pm25').style.color = getColor(inPm);
+  document.getElementById('out_pm25').textContent = outPm;
+  document.getElementById('out_pm25').style.color = getColor(outPm);
+
+  // CO2 & Gas (เช็ค null ป้องกัน error)
+  if (d.in_co2 != null) document.getElementById('in_co2').textContent = d.in_co2;
+  const gasVal = Number(d.in_gas);
+// สำหรับ gas ในอาคาร (in_gas)
+// ค่าปกติมักจะแกว่งอยู่ที่ 1300-1500 ดังนั้นควรเริ่มเตือนที่ 2200
+document.getElementById('in_gas').textContent = gasVal === 0 ? 'Not Found' : (gasVal > 3000 ? 'Danger' : gasVal > 1800 ? 'Elevated' : 'Normal');
+
+// สำหรับ gas นอกอาคาร (out_gas) 
+// (ถ้าใช้เซนเซอร์ตัวเดียวกัน หรือเผื่อค่ารบกวนภายนอก)
+const outGasVal = Number(d.out_gas);
+document.getElementById('out_gas').textContent = outGasVal === 0 ? 'Not Found' : (outGasVal > 2500 ? 'Danger' : outGasVal > 1800 ? 'Elevated' : 'Normal');
+
+  // Progress bars
+  const barIn = document.getElementById('bar-in');
+  barIn.style.width = Math.min(100, (inPm / 75) * 100).toFixed(0) + '%';
+  barIn.style.background = getColor(inPm);
+
+  const barOut = document.getElementById('bar-out');
+  barOut.style.width = Math.min(100, (outPm / 75) * 100).toFixed(0) + '%';
+  barOut.style.background = getColor(outPm);
+
+  // Card accent
+  document.getElementById('card-in').style.setProperty('--accent-color', getColor(inPm));
+  document.getElementById('card-out').style.setProperty('--accent-color', getColor(outPm));
+
+  // AQI (คำนวณจาก indoor PM2.5 มาตรฐาน US EPA)
+  document.getElementById('aqi-val').textContent = calculateAQI(inPm);
+
+  // Temp & Humidity (จากเซนเซอร์ AHT10)
+  const tempVal = d.temperature || d.temp;
+  if (tempVal != null) document.getElementById('temp-val').textContent = parseFloat(tempVal).toFixed(1) + '°C';
+  if (d.humidity != null) document.getElementById('humidity-val').textContent = parseFloat(d.humidity).toFixed(0) + '%';
+
+  // --- ALERT LOGIC ---
+  if (inPm > threshAlert && !alertDismissed) {
+    if (inPm > threshMod) {
+      triggerAlert(inPm, 'ค่าฝุ่นในบ้านอยู่ในระดับอันตราย');
+    } else {
+      triggerAlert(inPm, 'ค่าฝุ่นในบ้านเกินเกณฑ์ที่กำหนด');
+    }
+  } else if (inPm <= threshAlert) {
+    document.getElementById('alert-banner').classList.remove('show');
+    document.body.classList.remove('alert-state');
+    alertDismissed = false;
+  }
+
+  // Fan status (ซิงค์ UI เท่านั้น ไม่ trigger event ให้วนลูปหน้าเว็บกับบอร์ด)
+  if (d.filt_fan_status != null) {
+      syncFanUI('filt', d.filt_fan_status == 1);
+  }
+  if (d.vent_fan_status != null) {
+      syncFanUI('vent', d.vent_fan_status == 1);
+  }
+
+  // Update Chart realtime
+  if (pmChart) {
+    const now = new Date();
+    const lbl = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute:'2-digit' });
+    
+    pmChart.data.labels.push(lbl);
+    pmChart.data.datasets[0].data.push(inPm);
+    pmChart.data.datasets[1].data.push(outPm);
+    
+    if (pmChart.data.labels.length > 20) {
+        pmChart.data.labels.shift();
+        pmChart.data.datasets[0].data.shift();
+        pmChart.data.datasets[1].data.shift();
+    }
+    pmChart.update('none');
+  }
+}
+
+// ===== SOCKET.IO REAL-TIME =====
+const socket = io('http://localhost:3000');
+
+socket.on('connect', () => {
+  console.log('🟢 WebSocket connected');
+  document.querySelector('.live-pill').style.borderColor = 'rgba(63,185,80,0.5)';
+});
+
+socket.on('disconnect', () => {
+  console.log('🔴 WebSocket disconnected');
+  document.querySelector('.live-pill').style.borderColor = 'rgba(248,81,73,0.5)';
+});
+
+// ===== DEVICE OFFLINE DETECTION =====
+let sensorTimeout;
+function setDeviceOffline() {
+  const pill = document.querySelector('.live-pill');
+  pill.innerHTML = 'OFFLINE';
+  pill.style.color = 'var(--red)';
+  pill.style.background = 'var(--red-dim)';
+  pill.style.borderColor = 'rgba(248,81,73,0.5)';
+  
+  const clearIds = ['in_pm25', 'out_pm25', 'in_co2', 'in_gas', 'out_gas', 'aqi-val', 'temp-val', 'humidity-val', 'alert-count'];
+  clearIds.forEach(id => {
+      const el = document.getElementById(id);
+      if(el) {
+          el.textContent = '-';
+          if(id === 'in_pm25' || id === 'out_pm25') el.style.color = 'var(--text)';
+      }
+  });
+  document.getElementById('bar-in').style.width = '0%';
+  document.getElementById('bar-out').style.width = '0%';
+  
+  // Clear alerts
+  alertCount = 0;
+  const alertBanner = document.getElementById('alert-banner');
+  if(alertBanner) alertBanner.classList.remove('show');
+  document.body.classList.remove('alert-state');
+  
+  // Turn off fans visually
+  syncFanUI('filt', false);
+  syncFanUI('vent', false);
+}
+
+function resetSensorTimeout() {
+  clearTimeout(sensorTimeout);
+  const pill = document.querySelector('.live-pill');
+  if (pill.innerHTML === 'OFFLINE' || pill.innerHTML === 'CONNECTING...') {
+      pill.innerHTML = '<div class="pulse"></div> LIVE';
+      pill.style.color = 'var(--green)';
+      pill.style.background = 'var(--green-dim)';
+      pill.style.borderColor = 'rgba(63,185,80,0.5)';
+  }
+  sensorTimeout = setTimeout(setDeviceOffline, 15000);
+}
+
+// เริ่มนับถอยหลังทันทีที่โหลดหน้าเว็บ
+resetSensorTimeout();
+
+// รับข้อมูลจาก Server แบบ Real-time ทันทีที่ ESP32 ส่งเข้ามา
+socket.on('sensorData', (d) => {
+  console.log('📡 Real-time data:', d);
+  resetSensorTimeout();
+  updateUI(d);
+});
+
+let pmChart;
+async function initChart() {
+  try {
+    const res = await fetch('/api/history');
+    const data = await res.json();
+    
+    if (!Array.isArray(data) || data.length === 0) return;
+
+    const labels = data.map(d => new Date(d.created_at || Date.now()).toLocaleTimeString('th-TH', { hour: '2-digit', minute:'2-digit' }));
+    const inPm = data.map(d => d.in_pm25 || 0);
+    const outPm = data.map(d => d.out_pm25 || 0);
+
+    const ctx = document.getElementById('pmChart').getContext('2d');
+    pmChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Indoor PM2.5',
+                    data: inPm,
+                    borderColor: '#3fb950',
+                    backgroundColor: 'rgba(63, 185, 80, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHitRadius: 10
+                },
+                {
+                    label: 'Outdoor PM2.5',
+                    data: outPm,
+                    borderColor: '#58a6ff',
+                    backgroundColor: 'rgba(88, 166, 255, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHitRadius: 10
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        color: '#7d8590',
+                        font: { family: "'IBM Plex Mono', monospace", size: 10 },
+                        usePointStyle: true,
+                        boxWidth: 6
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(22, 27, 34, 0.9)',
+                    titleColor: '#e6edf3',
+                    bodyColor: '#e6edf3',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#7d8590', maxTicksLimit: 6, font: { size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#7d8590', font: { size: 10 } }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    });
+  } catch (err) {
+    console.error("Error setting up chart:", err);
+  }
+}
+
+
+async function fetchInitialData() {
+  try {
+    const res = await fetch('/api/latest');
+    const d = await res.json();
+    if (d && d.id) updateUI(d);
+    
+    await initChart();
+  } catch (err) {
+    console.error('Initial fetch error:', err);
+  }
+}
+fetchInitialData();
+</script>
+</body>
+</html>
