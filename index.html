@@ -143,7 +143,7 @@ if (localStorage.getItem('theme') === 'light') {
 
     <div class="bottom-right">
       <div class="chart-card">
-        <div class="chart-header">PM2.5 History (20 ล่าสุด)</div>
+        <div class="chart-header">PM2.5 History (เฉลี่ยทุก 10 นาที)</div>
         <div class="chart-container">
           <canvas id="pmChart"></canvas>
         </div>
@@ -154,11 +154,19 @@ if (localStorage.getItem('theme') === 'light') {
 </div>
 
 <script>
-// ===== STATE =====
+// =====================================================================
+// ส่วน JavaScript: สมองของหน้าเว็บ ทำหน้าที่รับข้อมูล อัปเดตตัวเลข
+// เปลี่ยนสี แจ้งเตือน และวาดกราฟ ทั้งหมดทำงานอัตโนมัติ
+// =====================================================================
+
+// === ค่าเกณฑ์สำหรับตัดสินคุณภาพอากาศ (หน่วย µg/m³) ===
+// threshGood = 25  → ต่ำกว่านี้ = สีเขียว (ดี)
+// threshMod  = 50  → ต่ำกว่านี้ = สีส้ม (ปานกลาง), สูงกว่า = สีแดง (อันตราย)
+// threshAlert = 35 → สูงกว่านี้ = แจ้งเตือน
 let threshGood = 25, threshMod = 50, threshAlert = 35;
-let alertCount = 0;
-let lastAlertTime = 0;
-let alertDismissed = false;
+let alertCount = 0;           // นับจำนวนครั้งที่แจ้งเตือนวันนี้
+let lastAlertTime = 0;        // เวลาที่แจ้งเตือนครั้งล่าสุด (ป้องกันแจ้งถี่เกินไป)
+let alertDismissed = false;   // ผู้ใช้กดปิดแจ้งเตือนแล้วหรือยัง
 
 // ===== THEME TOGGLE =====
 function toggleTheme() {
@@ -172,38 +180,47 @@ function toggleTheme() {
     // or just let the CSS handle it cleanly.
 }
 
-// ===== NOTIFICATION PERMISSION =====
+// === ขออนุญาตส่งการแจ้งเตือนไปที่เบราว์เซอร์ (Notification) ===
+// ถ้าผู้ใช้ยังไม่เคยอนุญาต จะมี popup ถามว่า "อนุญาตให้เว็บนี้ส่งการแจ้งเตือนไหม?"
 if ('Notification' in window && Notification.permission === 'default') {
   Notification.requestPermission();
 }
 
-// ===== HELPERS =====
+// === ฟังก์ชันช่วยเหลือ (Helper Functions) ===
+
+// แปลงเวลาเป็นรูปแบบ ชั่วโมง:นาที:วินาที แบบไทย
 function fmt(d) {
   return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// เลือกสีตามค่าฝุ่น: เขียว(ดี) / ส้ม(ปานกลาง) / แดง(อันตราย)
 function getColor(val) {
   if (val <= threshGood) return 'var(--green)';
   if (val <= threshMod) return 'var(--amber)';
   return 'var(--red)';
 }
 
+// เลือก CSS class ตามค่าฝุ่น (ใช้กำหนดสไตล์)
 function getClass(val) {
   if (val <= threshGood) return 'c-green';
   if (val <= threshMod) return 'c-amber';
   return 'c-red';
 }
 
+// แปลงค่าฝุ่นเป็นข้อความสถานะ
 function getStatus(val) {
   if (val <= threshGood) return 'Good';
   if (val <= threshMod) return 'Moderate';
   return 'Unhealthy';
 }
 
-// ===== US EPA AQI CALCULATION =====
+// === คำนวณดัชนีคุณภาพอากาศ AQI ตามมาตรฐาน US EPA ===
+// รับค่า PM2.5 แล้วคำนวณเป็นดัชนี AQI (0-500)
+// 0-50 = ดี, 51-100 = ปานกลาง, 101-150 = ไม่ดีต่อกลุ่มเสี่ยง, 151+ = อันตราย
 function calculateAQI(pm) {
   let cLow, cHigh, iLow, iHigh;
   
+  // ตารางช่วงค่า PM2.5 กับช่วง AQI ตามมาตรฐาน US EPA
   if (pm <= 12.0) { cLow = 0.0; cHigh = 12.0; iLow = 0; iHigh = 50; }
   else if (pm <= 35.4) { cLow = 12.1; cHigh = 35.4; iLow = 51; iHigh = 100; }
   else if (pm <= 55.4) { cLow = 35.5; cHigh = 55.4; iLow = 101; iHigh = 150; }
@@ -212,18 +229,21 @@ function calculateAQI(pm) {
   else if (pm <= 350.4) { cLow = 250.5; cHigh = 350.4; iLow = 301; iHigh = 400; }
   else { cLow = 350.5; cHigh = 500.4; iLow = 401; iHigh = 500; }
 
-  if (pm > 500.4) return 500; // Cap at max 500
+  if (pm > 500.4) return 500; // จำกัดค่าสูงสุดไว้ที่ 500
 
+  // สูตรคำนวณ AQI แบบ Linear Interpolation
   return Math.round(((iHigh - iLow) / (cHigh - cLow)) * (pm - cLow) + iLow);
 }
 
 
-// ===== FAN CONTROL =====
+// === ควบคุมหน้าตาพัดลมบนหน้าจอ ===
+// ฟังก์ชันนี้ไม่ได้สั่งพัดลมจริง แค่อัปเดตหน้าเว็บให้ตรงกับสถานะที่ ESP32 ส่งมา
 function toggleFan(id) {
   const isOn = document.getElementById('tog-' + id).checked;
   syncFanUI(id, isOn);
 }
 
+// ซิงค์หน้าตาการ์ดพัดลม: เปลี่ยนข้อความ ON/OFF, สถานะ Running/Standby, และสีการ์ด
 function syncFanUI(id, isOn) {
   const card = document.getElementById('fc-' + id);
   const lbl = document.getElementById('tl-' + id);
@@ -241,13 +261,15 @@ function syncFanUI(id, isOn) {
 }
 
 
-// ===== ALERT SYSTEM =====
+// === ระบบแจ้งเตือนเมื่อค่าฝุ่นเกินเกณฑ์ ===
+// ฟังก์ชันนี้จะถูกเรียกเมื่อ PM2.5 สูงเกิน threshAlert (35 µg/m³)
 function triggerAlert(inPm, reason) {
   const now = Date.now();
-  alertCount++;
+  alertCount++;           // เพิ่มตัวนับการแจ้งเตือน
   alertDismissed = false;
   document.getElementById('alert-count').textContent = alertCount;
 
+  // แสดงแถบแจ้งเตือนสีแดงบนหน้าจอ
   const banner = document.getElementById('alert-banner');
   document.getElementById('alert-title').textContent = '⚠️ ' + reason;
   document.getElementById('alert-sub').textContent =
@@ -255,7 +277,7 @@ function triggerAlert(inPm, reason) {
   banner.classList.add('show');
   document.body.classList.add('alert-state');
 
-  // Browser Notification
+  // ส่ง Notification เด้งขึ้นมาที่มุมจอคอม (จำกัดไม่ให้ส่งถี่เกิน 1 นาที)
   if ('Notification' in window && Notification.permission === 'granted' && (now - lastAlertTime > 60000)) {
     new Notification('⚠️ AirWatch Alert', {
       body: reason + ' · PM2.5 = ' + inPm + ' µg/m³',
@@ -264,7 +286,7 @@ function triggerAlert(inPm, reason) {
     lastAlertTime = now;
   }
 
-  addLog(inPm, reason);
+  addLog(inPm, reason);  // บันทึกลง Alert Log
 }
 
 function dismissAlert() {
@@ -301,11 +323,14 @@ function updateClock() {
 updateClock();
 setInterval(updateClock, 1000);
 
-// ===== UPDATE UI =====
+// =====================================================================
+// ฟังก์ชันหลัก: อัปเดตหน้าเว็บทั้งหมดเมื่อได้รับข้อมูลใหม่
+// ฟังก์ชันนี้ถูกเรียกทุกครั้งที่ Socket.IO ส่งข้อมูลมาจากเซิร์ฟเวอร์
+// =====================================================================
 function updateUI(d) {
-  if (!d) return; // UI Stability: ป้องกันกรณีข้อมูลเป็น null/undefined
+  if (!d) return; // ถ้าไม่มีข้อมูลเข้ามา ให้หยุดทำงานทันที
 
-  // Field Names: ใช้ชื่อ key ตรงกับที่ส่งมาจาก ESP32/Socket
+  // ดึงค่าฝุ่น PM2.5 จากข้อมูล (รองรับทั้งชื่อ key แบบ in_pm25 และ in_pm)
   const inPm = d.in_pm25 || d.in_pm || 0; 
   const outPm = d.out_pm25 || d.out_pm || 0;
 
@@ -315,17 +340,61 @@ function updateUI(d) {
   document.getElementById('out_pm25').textContent = outPm;
   document.getElementById('out_pm25').style.color = getColor(outPm);
 
-  // CO2 & Gas (เช็ค null ป้องกัน error)
-  if (d.in_co2 != null) document.getElementById('in_co2').textContent = d.in_co2;
-  const gasVal = Number(d.in_gas);
-// สำหรับ gas ในอาคาร (in_gas)
-// ค่าปกติมักจะแกว่งอยู่ที่ 1300-1500 ดังนั้นควรเริ่มเตือนที่ 2200
-document.getElementById('in_gas').textContent = gasVal === 0 ? 'Not Found' : (gasVal > 3000 ? 'Danger' : gasVal > 1800 ? 'Elevated' : 'Normal');
+  // =====================================================================
+  // อัปเดตค่า CO2
+  // =====================================================================
+  if (d.in_co2 != null) {
+      document.getElementById('in_co2').textContent = d.in_co2;
+  }
 
-// สำหรับ gas นอกอาคาร (out_gas) 
-// (ถ้าใช้เซนเซอร์ตัวเดียวกัน หรือเผื่อค่ารบกวนภายนอก)
-const outGasVal = Number(d.out_gas);
-document.getElementById('out_gas').textContent = outGasVal === 0 ? 'Not Found' : (outGasVal > 2500 ? 'Danger' : outGasVal > 1800 ? 'Elevated' : 'Normal');
+  // =====================================================================
+  // คำนวณค่าแก๊ส MQ-2 เป็นหน่วย ppm (ประมาณการ)
+  // ESP32 ให้ค่า Analog 0-4095 (แรงดัน 0-3.3V)
+  // =====================================================================
+  const rawGas = Number(d.in_gas);
+  if (rawGas === 0) {
+    document.getElementById('in_gas').textContent = 'Not Found';
+  } else {
+    // 1. แปลงค่า Analog เป็นโวลต์ (V)
+    let volts = rawGas * (3.3 / 4095.0);
+    if (volts <= 0) volts = 0.001; // ป้องกันการหารด้วยศูนย์
+    
+    // 2. คำนวณความต้านทาน Rs ของเซนเซอร์ (สมมติตัวต้านทานบนบอร์ด Rl = 10k)
+    let Rs = ((3.3 * 10.0) / volts) - 10.0;
+    
+    // 3. ค่า R0 คือความต้านทานในอากาศสะอาด (สมมติเบื้องต้นที่ 10k ต้อง Calibrate จริงหน้างาน)
+    let R0 = 10.0; 
+    let ratio = Rs / R0;
+    
+    // 4. คำนวณ ppm (ใช้สูตรประมาณการสำหรับก๊าซติดไฟ/ควัน จาก Datasheet MQ-2)
+    let gasPpm = Math.round(1000 * Math.pow(ratio, -2.1));
+    
+    // 5. กำหนดสถานะตามหน่วย ppm
+    let gasStatus = 'Normal';
+    if (gasPpm > 2000) gasStatus = 'Danger ';
+    else if (gasPpm > 800) gasStatus = 'Elevated ';
+    else gasStatus = 'Normal ';
+
+    document.getElementById('in_gas').textContent = `${gasPpm} ppm (${gasStatus})`;
+  }
+
+  // สำหรับ gas นอกอาคาร (ถ้ามี)
+  const outGasVal = Number(d.out_gas);
+  if (outGasVal === 0) {
+    document.getElementById('out_gas').textContent = 'Not Found';
+  } else {
+    let outVolts = outGasVal * (3.3 / 4095.0);
+    if (outVolts <= 0) outVolts = 0.001;
+    let outRs = ((3.3 * 10.0) / outVolts) - 10.0;
+    let outGasPpm = Math.round(1000 * Math.pow((outRs / 10.0), -2.1));
+    
+    let outGasStatus = 'Normal';
+    if (outGasPpm > 2000) outGasStatus = 'Danger ';
+    else if (outGasPpm > 800) outGasStatus = 'Elevated ';
+    else outGasStatus = 'Normal ';
+
+    document.getElementById('out_gas').textContent = `${outGasPpm} ppm (${outGasStatus})`;
+  }
 
   // Progress bars
   const barIn = document.getElementById('bar-in');
@@ -369,46 +438,86 @@ document.getElementById('out_gas').textContent = outGasVal === 0 ? 'Not Found' :
       syncFanUI('vent', d.vent_fan_status == 1);
   }
 
-  // Update Chart realtime
+  // Update Chart realtime (เฉลี่ยทุก 10 นาที)
   if (pmChart) {
     const now = new Date();
-    const lbl = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute:'2-digit' });
+    // สร้าง label ของช่วง 10 นาทีปัจจุบัน เช่น 08:10, 08:20, ...
+    const mins = now.getMinutes();
+    const bucket = mins - (mins % 10);
+    const bucketLabel = now.getHours().toString().padStart(2,'0') + ':' + bucket.toString().padStart(2,'0');
     
-    pmChart.data.labels.push(lbl);
-    pmChart.data.datasets[0].data.push(inPm);
-    pmChart.data.datasets[1].data.push(outPm);
+    // สะสมค่าใน buffer
+    if (!window._chartBuffer) window._chartBuffer = { label: '', inPmArr: [], outPmArr: [] };
+    const buf = window._chartBuffer;
     
-    if (pmChart.data.labels.length > 20) {
+    if (buf.label === bucketLabel) {
+      // ยังอยู่ในช่วง 10 นาทีเดิม → สะสมต่อ
+      buf.inPmArr.push(inPm);
+      buf.outPmArr.push(outPm);
+      
+      // อัปเดตจุดล่าสุดในกราฟแบบ running average
+      const lastIdx = pmChart.data.labels.length - 1;
+      if (lastIdx >= 0 && pmChart.data.labels[lastIdx] === bucketLabel) {
+        const avgIn = buf.inPmArr.reduce((a,b) => a+b, 0) / buf.inPmArr.length;
+        const avgOut = buf.outPmArr.reduce((a,b) => a+b, 0) / buf.outPmArr.length;
+        pmChart.data.datasets[0].data[lastIdx] = Math.round(avgIn * 10) / 10;
+        pmChart.data.datasets[1].data[lastIdx] = Math.round(avgOut * 10) / 10;
+      }
+    } else {
+      // เปลี่ยนช่วง 10 นาทีใหม่ → เพิ่มจุดใหม่
+      buf.label = bucketLabel;
+      buf.inPmArr = [inPm];
+      buf.outPmArr = [outPm];
+      
+      pmChart.data.labels.push(bucketLabel);
+      pmChart.data.datasets[0].data.push(inPm);
+      pmChart.data.datasets[1].data.push(outPm);
+      
+      // เก็บไว้ไม่เกิน 18 จุด (3 ชั่วโมง ÷ 10 นาที)
+      if (pmChart.data.labels.length > 18) {
         pmChart.data.labels.shift();
         pmChart.data.datasets[0].data.shift();
         pmChart.data.datasets[1].data.shift();
+      }
     }
     pmChart.update('none');
   }
 }
 
-// ===== SOCKET.IO REAL-TIME =====
+// =====================================================================
+// เชื่อมต่อ Socket.IO กับเซิร์ฟเวอร์
+// เหมือนเปิดช่องสื่อสารถาวรระหว่างเบราว์เซอร์กับเซิร์ฟเวอร์
+// ทำให้รับข้อมูลได้ทันทีโดยไม่ต้องกดรีเฟรชหน้าเว็บ
+// =====================================================================
 const socket = io('http://localhost:3000');
 
+// เมื่อเชื่อมต่อสำเร็จ
 socket.on('connect', () => {
   console.log('🟢 WebSocket connected');
   document.querySelector('.live-pill').style.borderColor = 'rgba(63,185,80,0.5)';
 });
 
+// เมื่อหลุดการเชื่อมต่อ
 socket.on('disconnect', () => {
   console.log('🔴 WebSocket disconnected');
   document.querySelector('.live-pill').style.borderColor = 'rgba(248,81,73,0.5)';
 });
 
-// ===== DEVICE OFFLINE DETECTION =====
+// =====================================================================
+// ระบบตรวจจับว่า ESP32 ออฟไลน์หรือไม่
+// ถ้าไม่ได้รับข้อมูลเกิน 15 วินาที จะถือว่าอุปกรณ์ออฟไลน์
+// และเปลี่ยนหน้าเว็บให้แสดงสถานะ OFFLINE
+// =====================================================================
 let sensorTimeout;
 function setDeviceOffline() {
+  // เปลี่ยนสถานะเป็น OFFLINE (แดง)
   const pill = document.querySelector('.live-pill');
   pill.innerHTML = 'OFFLINE';
   pill.style.color = 'var(--red)';
   pill.style.background = 'var(--red-dim)';
   pill.style.borderColor = 'rgba(248,81,73,0.5)';
   
+  // ล้างค่าตัวเลขทั้งหมดเป็นขีด (-) เพื่อไม่ให้ผู้ใช้สับสนกับข้อมูลเก่า
   const clearIds = ['in_pm25', 'out_pm25', 'in_co2', 'in_gas', 'out_gas', 'aqi-val', 'temp-val', 'humidity-val', 'alert-count'];
   clearIds.forEach(id => {
       const el = document.getElementById(id);
@@ -420,13 +529,13 @@ function setDeviceOffline() {
   document.getElementById('bar-in').style.width = '0%';
   document.getElementById('bar-out').style.width = '0%';
   
-  // Clear alerts
+  // ล้างการแจ้งเตือนทั้งหมด
   alertCount = 0;
   const alertBanner = document.getElementById('alert-banner');
   if(alertBanner) alertBanner.classList.remove('show');
   document.body.classList.remove('alert-state');
   
-  // Turn off fans visually
+  // แสดงพัดลมทั้ง 2 ตัวเป็นสถานะปิดบนหน้าจอ
   syncFanUI('filt', false);
   syncFanUI('vent', false);
 }
@@ -453,6 +562,11 @@ socket.on('sensorData', (d) => {
   updateUI(d);
 });
 
+// =====================================================================
+// สร้างกราฟ PM2.5 ด้วย Chart.js
+// ดึงข้อมูลประวัติจากเซิร์ฟเวอร์ (ค่าเฉลี่ยทุก 10 นาที ย้อนหลัง 3 ชม.)
+// แล้ววาดเป็นกราฟเส้น 2 เส้น: ฝุ่นในบ้าน (เขียว) และฝุ่นนอกบ้าน (ฟ้า)
+// =====================================================================
 let pmChart;
 async function initChart() {
   try {
@@ -461,7 +575,10 @@ async function initChart() {
     
     if (!Array.isArray(data) || data.length === 0) return;
 
-    const labels = data.map(d => new Date(d.created_at || Date.now()).toLocaleTimeString('th-TH', { hour: '2-digit', minute:'2-digit' }));
+    const labels = data.map(d => {
+      const dt = new Date(d.created_at || Date.now());
+      return dt.getHours().toString().padStart(2,'0') + ':' + dt.getMinutes().toString().padStart(2,'0');
+    });
     const inPm = data.map(d => d.in_pm25 || 0);
     const outPm = data.map(d => d.out_pm25 || 0);
 
@@ -542,18 +659,23 @@ async function initChart() {
 }
 
 
+// =====================================================================
+// ฟังก์ชันโหลดข้อมูลครั้งแรกตอนเปิดหน้าเว็บ
+// 1. ดึงข้อมูลล่าสุดมาแสดงบนหน้าจอทันที (ไม่ต้องรอ ESP32 ส่งรอบใหม่)
+// 2. ดึงประวัติมาวาดกราฟ
+// =====================================================================
 async function fetchInitialData() {
   try {
-    const res = await fetch('/api/latest');
+    const res = await fetch('/api/latest');   // เรียก API ดึงข้อมูลล่าสุด
     const d = await res.json();
-    if (d && d.id) updateUI(d);
+    if (d && d.id) updateUI(d);               // ถ้ามีข้อมูล ให้อัปเดตหน้าจอเลย
     
-    await initChart();
+    await initChart();                        // วาดกราฟจากข้อมูลประวัติ
   } catch (err) {
     console.error('Initial fetch error:', err);
   }
 }
-fetchInitialData();
+fetchInitialData(); // เรียกทำงานทันทีเมื่อหน้าเว็บโหลดเสร็จ
 </script>
 </body>
 </html>
