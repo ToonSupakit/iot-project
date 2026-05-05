@@ -248,8 +248,11 @@ void loop() {
 
     // อ่าน ENS160
     if (ensOnline) {
-      lastCo2 = ens160.getECO2();  
-      if (lastCo2 == 0) ensOnline = ens160.begin();
+      if (ens160.checkDataStatus()) {
+        lastCo2 = ens160.getECO2();
+      }
+      // เซนเซอร์ ENS160 จะใช้เวลา Warm-up ประมาณ 3 นาทีแรก ค่าอาจจะได้ 0
+      // จึงไม่ควรสั่ง begin() ใหม่เมื่อค่าเป็น 0 เพราะจะทำให้เริ่ม Warm-up ใหม่และค้าง
     } else {
       ensOnline = ens160.begin();
       if (ensOnline) ens160.setOperatingMode(SFE_ENS160_STANDARD);
