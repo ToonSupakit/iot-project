@@ -7,6 +7,11 @@ AirWatch คือโครงการ IoT สำหรับตรวจวั
 </p>
 <p align="center"><em>ชุดฮาร์ดแวร์ AirWatch: ESP32, เซนเซอร์ PMS5003, และพัดลม Brushless 5V-DC</em></p>
 
+<p align="center">
+  <img src="images/web_dashboard.png" alt="หน้าเว็บ Dashboard AirWatch แสดงข้อมูลคุณภาพอากาศแบบ Real-time" width="700">
+</p>
+<p align="center"><em>Web Dashboard: แสดงผลข้อมูลคุณภาพอากาศแบบ Real-time พร้อมควบคุมพัดลม</em></p>
+
 ---
 
 ## ✨ ฟีเจอร์หลัก (Features)
