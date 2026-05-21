@@ -1,4 +1,4 @@
-# AirWatch - Smart Air Quality Monitor
+# IoT Smart Power Management & Monitoring System
 
 An IoT project for monitoring air quality in real-time with automatic fan control. It uses an ESP32 board to read data from multiple sensors and sends it to a Node.js server, which stores everything in a MySQL database and shows it on a web dashboard.
 
