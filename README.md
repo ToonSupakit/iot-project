@@ -1,4 +1,4 @@
-# IoT Smart Power Management & Monitoring System
+# Smart Air Quality Monitoring & Automated Ventilation System
 
 An IoT project for monitoring air quality in real-time with automatic fan control. It uses an ESP32 board to read data from multiple sensors and sends it to a Node.js server, which stores everything in a MySQL database and shows it on a web dashboard.
 
@@ -59,7 +59,7 @@ An IoT project for monitoring air quality in real-time with automatic fan contro
 
 ## Project Structure
 
-- `frimware.ino` — ESP32 firmware, reads sensor data and sends HTTP POST to the server
+- `firmware.ino` — ESP32 firmware, reads sensor data and sends HTTP POST to the server
 - `server.js` — Node.js server, handles API, saves data to DB, pushes real-time updates, and serves the web pages
 - `index.html` — main dashboard page with current data and last 20 readings chart
 - `history.html` — history page with detailed data and daily summary
@@ -97,7 +97,7 @@ An IoT project for monitoring air quality in real-time with automatic fan contro
    Server runs on port 3000
 
 ### 3. Firmware Setup
-1. Open `frimware.ino` in Arduino IDE
+1. Open `firmware.ino` in Arduino IDE
 2. Install these libraries: `HTTPClient`, `Adafruit AHTX0`, `SparkFun ENS160`, `PMS Library`
 3. Change WiFi and server URL in the code:
    ```cpp
