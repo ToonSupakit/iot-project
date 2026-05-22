@@ -37,7 +37,7 @@
 // =====================================================================
 const char* ssid = "Judyxtoon";                        // ชื่อ WiFi ที่จะเชื่อมต่อ
 const char* password = "12345678";                      // รหัสผ่าน WiFi
-const char* serverUrl = "http://172.20.10.2:3000/api/log"; // URL ของเซิร์ฟเวอร์ Node.js
+const char* serverUrl = "http://172.20.10.3:3000/api/log"; // URL ของเซิร์ฟเวอร์ Node.js
 
 // =====================================================================
 // ตั้งค่าขา (Pin) ที่ต่อกับอุปกรณ์ภายนอก
@@ -113,12 +113,13 @@ void setup() {
   digitalWrite(FAN_FILT_PIN, HIGH); 
 
   // ตั้งค่า Watchdog Timer
+  // ลองเพิ่ม task เข้า WDT ที่ระบบ init ไว้แล้วก่อน ถ้ายังไม่มีก็ init เอง
   esp_task_wdt_config_t twdt_config = {
       .timeout_ms = WDT_TIMEOUT * 1000,                    
       .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,     
       .trigger_panic = true                                 
   };
-  esp_task_wdt_init(&twdt_config);  
+  esp_task_wdt_init(&twdt_config);   // ถ้า init แล้วจะได้ Error แต่ไม่ crash
   esp_task_wdt_add(NULL);           
 
   // เปิดพอร์ตสื่อสารเซนเซอร์ฝุ่น
@@ -171,11 +172,12 @@ void loop() {
 #endif
   }
 
-  // รับข้อมูลฝุ่นในบ้าน
-  if (pms.readUntil(data, 500)) {
+  // รับข้อมูลฝุ่นในบ้าน (ลด timeout จาก 500 เป็น 100ms เพื่อไม่ให้ค้างนานจน WDT สั่ง Restart)
+  if (pms.readUntil(data, 100)) {
     currentPmValue = data.PM_AE_UG_2_5;  
     lastPmReadTime = millis();             
   }
+  esp_task_wdt_reset(); // รีเซ็ต WDT หลังจากรอเซนเซอร์ฝุ่น
   if (millis() - lastPmReadTime > PM_TIMEOUT) currentPmValue = 0;
 
   // รับข้อมูลฝุ่นนอกบ้าน (ถ้ามี)

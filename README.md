@@ -14,6 +14,11 @@ An IoT project for monitoring air quality in real-time with automatic fan contro
 </p>
 <p align="center"><em>Web Dashboard showing real-time air quality data</em></p>
 
+<p align="center">
+  <img src="images/architecture_diagram.png" alt="Architecture Diagram" width="800">
+</p>
+<p align="center"><em>System Architecture Diagram</em></p>
+
 ---
 
 ## Features
