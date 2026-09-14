@@ -57,7 +57,7 @@ function adminMiddleware(req, res, next) {
 function dbQuery(db, sql, params = []) {
     return new Promise((resolve, reject) => {
         db.query(sql, params, (err, results) => {
-            if (err) reject(err); else resolve(results);
+            if (err) reject(err); else resolve(results || []);
         });
     });
 }
@@ -279,7 +279,7 @@ function createApp({ db, io, apiKey }) {
                     'INSERT INTO devices (device_key, device_name, is_online, last_seen_at) VALUES (?, ?, 1, NOW())',
                     [deviceKey, 'AirWatch Device']
                 );
-                deviceId = result.insertId;
+                deviceId = (result && result.insertId) ? result.insertId : null;
             }
 
             const sql = `INSERT INTO sensor_data
