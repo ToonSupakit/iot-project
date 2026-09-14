@@ -32,6 +32,5 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 
 -- Add device_id column to sensor_data (nullable for backwards compatibility)
-ALTER TABLE sensor_data
-    ADD COLUMN IF NOT EXISTS device_id INT NULL AFTER id,
-    ADD INDEX IF NOT EXISTS idx_sensor_device (device_id);
+ALTER TABLE sensor_data ADD COLUMN device_id INT NULL AFTER id;
+ALTER TABLE sensor_data ADD INDEX idx_sensor_device (device_id);
