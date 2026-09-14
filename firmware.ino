@@ -310,8 +310,15 @@
     // =================================================================
     // รับข้อมูลฝุ่นในบ้าน
     if (pms.read(data)) {
-      currentPmValue = data.PM_AE_UG_2_5;  // ★ ยอมรับค่า 0 ได้ (อากาศสะอาด)
-      if (currentPmValue > PM_MAX_CAP) currentPmValue = PM_MAX_CAP;  // ★ Cap ค่าสูงสุดป้องกันเพี้ยน
+      int rawPm = data.PM_AE_UG_2_5;
+      if (rawPm > PM_MAX_CAP) rawPm = PM_MAX_CAP;  // Cap ค่าสูงสุดป้องกันเพี้ยน
+      
+      // ★ ตัวกรองสัญญาณ EMA (Exponential Moving Average) ป้องกันค่ากระโดดเด้งมั่ว
+      if (currentPmValue == 0 || lastPmReadTime == 0) {
+        currentPmValue = rawPm;
+      } else {
+        currentPmValue = (int)((currentPmValue * 0.75) + (rawPm * 0.25));
+      }
       lastPmReadTime = millis();
     }
 
@@ -321,8 +328,14 @@
     // รับข้อมูลฝุ่นนอกบ้าน
   #if HAS_OUTDOOR_SENSORS
     if (pmsOut.read(dataOut)) {
-      currentPmOutValue = dataOut.PM_AE_UG_2_5;  // ★ ยอมรับค่า 0 ได้
-      if (currentPmOutValue > PM_MAX_CAP) currentPmOutValue = PM_MAX_CAP;  // ★ Cap ค่าสูงสุด
+      int rawPmOut = dataOut.PM_AE_UG_2_5;
+      if (rawPmOut > PM_MAX_CAP) rawPmOut = PM_MAX_CAP;  // Cap ค่าสูงสุด
+      
+      if (currentPmOutValue == 0 || lastPmOutReadTime == 0) {
+        currentPmOutValue = rawPmOut;
+      } else {
+        currentPmOutValue = (int)((currentPmOutValue * 0.75) + (rawPmOut * 0.25));
+      }
       lastPmOutReadTime = millis();
     }
 
@@ -452,10 +465,30 @@
         if (ensOnline) ens160.setOperatingMode(SFE_ENS160_STANDARD);
       }
 
-      // อ่านแก๊ส
-      lastGas = analogRead(MQ2_PIN);
+      // อ่านแก๊ส (Multi-sampling 20 ครั้ง + EMA Smoothing ป้องกันนอยส์ขา ADC ESP32)
+      long gasSum = 0;
+      for (int i = 0; i < 20; i++) {
+        gasSum += analogRead(MQ2_PIN);
+        delayMicroseconds(150);
+      }
+      int rawGas = gasSum / 20;
+      if (lastGas == 0) {
+        lastGas = rawGas;
+      } else {
+        lastGas = (int)((lastGas * 0.8) + (rawGas * 0.2));
+      }
   #if HAS_OUTDOOR_SENSORS
-      lastGasOut = analogRead(MQ2_OUT_PIN);
+      long gasOutSum = 0;
+      for (int i = 0; i < 20; i++) {
+        gasOutSum += analogRead(MQ2_OUT_PIN);
+        delayMicroseconds(150);
+      }
+      int rawGasOut = gasOutSum / 20;
+      if (lastGasOut == 0) {
+        lastGasOut = rawGasOut;
+      } else {
+        lastGasOut = (int)((lastGasOut * 0.8) + (rawGasOut * 0.2));
+      }
   #else
       lastGasOut = 0; // บังคับเป็น 0 ถ้ายังไม่มีเซนเซอร์ ป้องกันค่ากวน
   #endif
