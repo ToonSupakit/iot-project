@@ -168,7 +168,42 @@ io.on('connection', (socket) => {
 });
 
 // =====================================================================
+// ระบบเคลียร์ข้อมูลเก่าใน DB อัตโนมัติ (Pruning Data)
+// เคลียร์ข้อมูลที่เก่าเกิน 30 วัน วันละ 1 ครั้ง เพื่อป้องกัน DB บวม
+// =====================================================================
+setInterval(() => {
+    const pruneSql = "DELETE FROM sensor_data WHERE created_at < NOW() - INTERVAL 30 DAY";
+    db.query(pruneSql, (err, result) => {
+        if (err) console.error("⚠️ DB Prune Error:", err);
+        else if (result.affectedRows > 0) {
+            console.log(`🧹 Cleaned up ${result.affectedRows} old records from DB.`);
+        }
+    });
+}, 24 * 60 * 60 * 1000); // ทำงานทุกๆ 24 ชั่วโมง
+
+// =====================================================================
 // เริ่มต้นเซิร์ฟเวอร์ที่ Port 3000
 // หลังจากรันแล้ว สามารถเข้าถึงได้ที่ http://localhost:3000
 // =====================================================================
-server.listen(3000, () => console.log("🚀 Server + WebSocket running on port 3000"));
+server.listen(3000, () => {
+    console.log("🚀 Server + WebSocket running on port 3000");
+
+    // ระบบ UDP Auto-Discovery: คอยตอบสัญญาณค้นหาจาก ESP32 อัตโนมัติ
+    // ทำให้ ESP32 รู้จัก IP ของคอมพิวเตอร์ทันทีโดยไม่ต้องกรอก IP
+    const dgram = require('dgram');
+    const udpSocket = dgram.createSocket('udp4');
+
+    udpSocket.on('message', (msg, rinfo) => {
+        if (msg.toString().includes('AIRWATCH_DISCOVER')) {
+            const reply = Buffer.from('AIRWATCH_SERVER_HERE:3000');
+            udpSocket.send(reply, rinfo.port, rinfo.address, (err) => {
+                if (!err) console.log(`🎯 Auto-Discovery: Paired with ESP32 at ${rinfo.address}`);
+            });
+        }
+    });
+
+    udpSocket.bind(41234, () => {
+        udpSocket.setBroadcast(true);
+        console.log("📡 Auto-Discovery: UDP Radar is active on port 41234");
+    });
+});
