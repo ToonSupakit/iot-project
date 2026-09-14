@@ -38,7 +38,7 @@ if (localStorage.getItem('theme') === 'light') {
 </div>
 
 <!-- Claim Device Modal -->
-<div id="claim-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:100; display:none; align-items:center; justify-content:center;">
+<div id="claim-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:100; align-items:center; justify-content:center;">
   <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:2rem; width:90%; max-width:400px; box-shadow:0 20px 60px rgba(0,0,0,0.4);">
     <h3 style="font-family:var(--mono); font-size:14px; color:var(--text); margin-bottom:1rem;">🔗 Claim Device</h3>
     <input id="claim-key" type="text" placeholder="Device API Key" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border2); background:var(--surface2); color:var(--text); font-family:var(--mono); font-size:13px; margin-bottom:10px; box-sizing:border-box;">
@@ -47,6 +47,21 @@ if (localStorage.getItem('theme') === 'light') {
     <div style="display:flex; gap:10px; justify-content:flex-end;">
       <button onclick="hideClaimModal()" style="background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; padding:8px 16px; border-radius:8px; font-size:12px;">Cancel</button>
       <button onclick="claimDevice()" style="background:var(--green); border:none; color:#fff; cursor:pointer; padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600;">Claim</button>
+    </div>
+  </div>
+</div>
+
+<!-- Logout Modal -->
+<div id="logout-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:100; align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:2rem; width:90%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,0.4); text-align:center;">
+    <div style="width:48px; height:48px; border-radius:50%; background:var(--red-dim); color:var(--red); display:inline-flex; align-items:center; justify-content:center; margin-bottom:1rem;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+    </div>
+    <h3 style="font-family:var(--sans); font-size:16px; font-weight:600; color:var(--text); margin-bottom:0.5rem;">ยืนยันการออกจากระบบ</h3>
+    <p style="font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:1.5rem;">คุณต้องการออกจากระบบ AirWatch ใช่หรือไม่?</p>
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button onclick="hideLogoutModal()" style="flex:1; background:var(--surface2); border:1px solid var(--border); color:var(--text); cursor:pointer; padding:10px; border-radius:8px; font-size:13px; font-weight:500;">ยกเลิก</button>
+      <button onclick="confirmLogout()" style="flex:1; background:var(--red); border:none; color:#fff; cursor:pointer; padding:10px; border-radius:8px; font-size:13px; font-weight:600;">ออกจากระบบ</button>
     </div>
   </div>
 </div>
@@ -650,10 +665,13 @@ async function claimDevice() {
   } catch { errEl.textContent = 'Network error'; errEl.style.display = 'block'; }
 }
 
-function logout() {
+function showLogoutModal() { document.getElementById('logout-modal').style.display = 'flex'; }
+function hideLogoutModal() { document.getElementById('logout-modal').style.display = 'none'; }
+function confirmLogout() {
   localStorage.removeItem('airwatch_token');
-  location.reload();
+  window.location.href = '/login.html';
 }
+function logout() { showLogoutModal(); }
 </script>
 </body>
 </html>
