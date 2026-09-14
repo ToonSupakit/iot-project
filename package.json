@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "migrate": "node db/migrate.js",
     "test": "node --test tests/server.test.cjs tests/dashboard.test.cjs"
   },
   "keywords": [],
