@@ -61,7 +61,7 @@ if (localStorage.getItem('theme') === 'light') {
       <div class="pm-unit">µg/m³ · PM2.5</div>
       <div class="pm-bar-track"><div class="pm-bar-fill" id="bar-in" style="width:0%;background:var(--green);"></div></div>
       <div class="pm-meta">
-        <div class="pm-meta-item">CO₂ <span id="in_co2">-</span> ppm</div>
+        <div class="pm-meta-item">eCO₂ <span id="in_co2">-</span> ppm</div>
         <div class="pm-meta-item">Gas <span id="in_gas">-</span></div>
       </div>
     </div>
@@ -143,7 +143,7 @@ if (localStorage.getItem('theme') === 'light') {
 
     <div class="bottom-right">
       <div class="chart-card">
-        <div class="chart-header">PM2.5 History (เฉลี่ยทุก 10 นาที)</div>
+        <div class="chart-header">PM2.5 History (เฉลี่ยทุก 10 นาที · อัปเดตทุก 1 นาที)</div>
         <div class="chart-container">
           <canvas id="pmChart"></canvas>
         </div>
@@ -164,7 +164,9 @@ if (localStorage.getItem('theme') === 'light') {
 // threshMod  = 50  → ต่ำกว่านี้ = สีส้ม (ปานกลาง), สูงกว่า = สีแดง (อันตราย)
 // threshAlert = 35 → สูงกว่านี้ = แจ้งเตือน
 let threshGood = 25, threshMod = 50, threshAlert = 35;
-let alertCount = 0;           // นับจำนวนครั้งที่แจ้งเตือนวันนี้
+let alertCount = 0;
+let alertDay = '';
+let previousAlertLevel = 0;           // นับจำนวนครั้งที่แจ้งเตือนวันนี้
 let lastAlertTime = 0;        // เวลาที่แจ้งเตือนครั้งล่าสุด (ป้องกันแจ้งถี่เกินไป)
 let alertDismissed = false;   // ผู้ใช้กดปิดแจ้งเตือนแล้วหรือยัง
 
@@ -263,9 +265,22 @@ function syncFanUI(id, isOn) {
 
 // === ระบบแจ้งเตือนเมื่อค่าฝุ่นเกินเกณฑ์ ===
 // ฟังก์ชันนี้จะถูกเรียกเมื่อ PM2.5 สูงเกิน threshAlert (35 µg/m³)
+function syncAlertDay() {
+  const day = new Date().toLocaleDateString('en-CA');
+  if (day !== alertDay) {
+    alertDay = day;
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem('airwatch-alerts') || 'null'); } catch {}
+    alertCount = saved && saved.day === day ? Number(saved.count) || 0 : 0;
+  }
+  document.getElementById('alert-count').textContent = alertCount;
+}
+
 function triggerAlert(inPm, reason) {
+  syncAlertDay();
   const now = Date.now();
-  alertCount++;           // เพิ่มตัวนับการแจ้งเตือน
+  alertCount++;
+  localStorage.setItem('airwatch-alerts', JSON.stringify({ day: alertDay, count: alertCount }));           // เพิ่มตัวนับการแจ้งเตือน
   alertDismissed = false;
   document.getElementById('alert-count').textContent = alertCount;
 
@@ -308,6 +323,7 @@ function addLog(pm, reason) {
     <div class="notif-time">${fmt(now)}</div>
   `;
   items.insertBefore(item, items.firstChild);
+  while (items.children.length > 100) items.lastElementChild.remove();
   log.classList.add('has-items');
 }
 
@@ -318,6 +334,7 @@ function clearLog() {
 
 // ===== CLOCK =====
 function updateClock() {
+  syncAlertDay();
   document.getElementById('time-display').textContent = fmt(new Date());
 }
 updateClock();
@@ -331,72 +348,26 @@ function updateUI(d) {
   if (!d) return; // ถ้าไม่มีข้อมูลเข้ามา ให้หยุดทำงานทันที
 
   // ดึงค่าฝุ่น PM2.5 จากข้อมูล (รองรับทั้งชื่อ key แบบ in_pm25 และ in_pm)
-  const inPm = d.in_pm25 || d.in_pm || 0; 
-  const outPm = d.out_pm25 || d.out_pm || 0;
+  const measurement = value => value == null || !Number.isFinite(Number(value)) ? null : Number(value);
+  const inPm = measurement(d.in_pm25);
+  const outPm = measurement(d.out_pm25);
 
   // Update PM displays
-  document.getElementById('in_pm25').textContent = inPm;
-  document.getElementById('in_pm25').style.color = getColor(inPm);
-  document.getElementById('out_pm25').textContent = outPm;
-  document.getElementById('out_pm25').style.color = getColor(outPm);
+  document.getElementById('in_pm25').textContent = inPm ?? 'No data';
+  document.getElementById('in_pm25').style.color = inPm == null ? 'var(--muted)' : getColor(inPm);
+  document.getElementById('out_pm25').textContent = outPm ?? 'No data';
+  document.getElementById('out_pm25').style.color = outPm == null ? 'var(--muted)' : getColor(outPm);
 
   // =====================================================================
   // อัปเดตค่า CO2
   // =====================================================================
-  if (d.in_co2 != null) {
-      document.getElementById('in_co2').textContent = d.in_co2;
+  document.getElementById('in_co2').textContent = measurement(d.in_co2) ?? 'No data';
+  // MQ-2 raw ADC: no ppm claim without per-sensor calibration.
+  for (const id of ['in_gas', 'out_gas']) {
+    const value = measurement(d[id]);
+    document.getElementById(id).textContent = value == null ? 'No data' : value + ' ADC';
   }
 
-  // =====================================================================
-  // คำนวณค่าแก๊ส MQ-2 เป็นหน่วย ppm (ประมาณการ)
-  // ESP32 ให้ค่า Analog 0-4095 (แรงดัน 0-3.3V)
-  // =====================================================================
-  const rawGas = Number(d.in_gas);
-  if (rawGas === 0) {
-    document.getElementById('in_gas').textContent = 'Not Found';
-  } else {
-    // 1. แปลงค่า Analog เป็นโวลต์ (V)
-    let volts = rawGas * (3.3 / 4095.0);
-    if (volts <= 0) volts = 0.001; // ป้องกันการหารด้วยศูนย์
-    
-    // 2. คำนวณความต้านทาน Rs ของเซนเซอร์ (สมมติตัวต้านทานบนบอร์ด Rl = 10k)
-    let Rs = ((3.3 * 10.0) / volts) - 10.0;
-    
-    // 3. ค่า R0 คือความต้านทานในอากาศสะอาด (สมมติเบื้องต้นที่ 10k ต้อง Calibrate จริงหน้างาน)
-    let R0 = 10.0; 
-    let ratio = Rs / R0;
-    
-    // 4. คำนวณ ppm (ใช้สูตรประมาณการสำหรับก๊าซติดไฟ/ควัน จาก Datasheet MQ-2)
-    let gasPpm = Math.round(1000 * Math.pow(ratio, -2.1));
-    
-    // 5. กำหนดสถานะตามหน่วย ppm
-    let gasStatus = 'Normal';
-    if (gasPpm > 2000) gasStatus = 'Danger ';
-    else if (gasPpm > 800) gasStatus = 'Elevated ';
-    else gasStatus = 'Normal ';
-
-    document.getElementById('in_gas').textContent = `${gasPpm} ppm (${gasStatus})`;
-  }
-
-  // สำหรับ gas นอกอาคาร (ถ้ามี)
-  const outGasVal = Number(d.out_gas);
-  if (outGasVal === 0) {
-    document.getElementById('out_gas').textContent = 'Not Found';
-  } else {
-    let outVolts = outGasVal * (3.3 / 4095.0);
-    if (outVolts <= 0) outVolts = 0.001;
-    let outRs = ((3.3 * 10.0) / outVolts) - 10.0;
-    let outGasPpm = Math.round(1000 * Math.pow((outRs / 10.0), -2.1));
-    
-    let outGasStatus = 'Normal';
-    if (outGasPpm > 2000) outGasStatus = 'Danger ';
-    else if (outGasPpm > 800) outGasStatus = 'Elevated ';
-    else outGasStatus = 'Normal ';
-
-    document.getElementById('out_gas').textContent = `${outGasPpm} ppm (${outGasStatus})`;
-  }
-
-  // Progress bars
   const barIn = document.getElementById('bar-in');
   barIn.style.width = Math.min(100, (inPm / 75) * 100).toFixed(0) + '%';
   barIn.style.background = getColor(inPm);
@@ -406,31 +377,39 @@ function updateUI(d) {
   barOut.style.background = getColor(outPm);
 
   // Card accent
-  document.getElementById('card-in').style.setProperty('--accent-color', getColor(inPm));
-  document.getElementById('card-out').style.setProperty('--accent-color', getColor(outPm));
+  document.getElementById('card-in').style.setProperty('--accent-color', (inPm == null ? 'var(--muted)' : getColor(inPm)));
+  document.getElementById('card-out').style.setProperty('--accent-color', (outPm == null ? 'var(--muted)' : getColor(outPm)));
 
   // AQI (คำนวณจาก indoor PM2.5 มาตรฐาน US EPA)
-  document.getElementById('aqi-val').textContent = calculateAQI(inPm);
+  document.getElementById('aqi-val').textContent = inPm == null ? '-' : calculateAQI(inPm);
 
   // Temp & Humidity (จากเซนเซอร์ AHT10)
-  const tempVal = d.temperature || d.temp;
-  if (tempVal != null) document.getElementById('temp-val').textContent = parseFloat(tempVal).toFixed(1) + '°C';
-  if (d.humidity != null) document.getElementById('humidity-val').textContent = parseFloat(d.humidity).toFixed(0) + '%';
+  const tempVal = measurement(d.temperature);
+  const humidityVal = measurement(d.humidity);
+  document.getElementById('temp-val').textContent = tempVal == null ? 'No data' : tempVal.toFixed(1) + '°C';
+  document.getElementById('humidity-val').textContent = humidityVal == null ? 'No data' : humidityVal.toFixed(0) + '%';
 
-  // --- ALERT LOGIC ---
-  if (inPm > threshAlert && !alertDismissed) {
-    if (inPm > threshMod) {
-      triggerAlert(inPm, 'ค่าฝุ่นในบ้านอยู่ในระดับอันตราย');
-    } else {
-      triggerAlert(inPm, 'ค่าฝุ่นในบ้านเกินเกณฑ์ที่กำหนด');
-    }
-  } else if (inPm <= threshAlert) {
+  const level = inPm == null ? null : inPm > threshMod ? 2 : inPm > threshAlert ? 1 : 0;
+  if (level === null) {
+    // Missing data must not falsely reset the pollution episode.
+    document.getElementById('alert-banner').classList.remove('show');
+    document.body.classList.remove('alert-state');
+  } else if (level === 0) {
     document.getElementById('alert-banner').classList.remove('show');
     document.body.classList.remove('alert-state');
     alertDismissed = false;
+    previousAlertLevel = 0;
+  } else {
+    if (!alertDismissed && (previousAlertLevel === 0 || level > previousAlertLevel)) {
+      triggerAlert(inPm, level === 2 ? 'ค่าฝุ่นในบ้านอยู่ในระดับอันตราย' : 'ค่าฝุ่นในบ้านเกินเกณฑ์ที่กำหนด');
+    } else if (!alertDismissed) {
+      document.getElementById('alert-sub').textContent = 'PM2.5 ในบ้าน = ' + inPm + ' µg/m³';
+      document.getElementById('alert-banner').classList.add('show');
+      document.body.classList.add('alert-state');
+    }
+    previousAlertLevel = level;
   }
 
-  // Fan status (ซิงค์ UI เท่านั้น ไม่ trigger event ให้วนลูปหน้าเว็บกับบอร์ด)
   if (d.filt_fan_status != null) {
       syncFanUI('filt', d.filt_fan_status == 1);
   }
@@ -439,49 +418,8 @@ function updateUI(d) {
   }
 
   // Update Chart realtime (เฉลี่ยทุก 10 นาที)
-  if (pmChart) {
-    const now = new Date();
-    // สร้าง label ของช่วง 10 นาทีปัจจุบัน เช่น 08:10, 08:20, ...
-    const mins = now.getMinutes();
-    const bucket = mins - (mins % 10);
-    const bucketLabel = now.getHours().toString().padStart(2,'0') + ':' + bucket.toString().padStart(2,'0');
-    
-    // สะสมค่าใน buffer
-    if (!window._chartBuffer) window._chartBuffer = { label: '', inPmArr: [], outPmArr: [] };
-    const buf = window._chartBuffer;
-    
-    if (buf.label === bucketLabel) {
-      // ยังอยู่ในช่วง 10 นาทีเดิม → สะสมต่อ
-      buf.inPmArr.push(inPm);
-      buf.outPmArr.push(outPm);
-      
-      // อัปเดตจุดล่าสุดในกราฟแบบ running average
-      const lastIdx = pmChart.data.labels.length - 1;
-      if (lastIdx >= 0 && pmChart.data.labels[lastIdx] === bucketLabel) {
-        const avgIn = buf.inPmArr.reduce((a,b) => a+b, 0) / buf.inPmArr.length;
-        const avgOut = buf.outPmArr.reduce((a,b) => a+b, 0) / buf.outPmArr.length;
-        pmChart.data.datasets[0].data[lastIdx] = Math.round(avgIn * 10) / 10;
-        pmChart.data.datasets[1].data[lastIdx] = Math.round(avgOut * 10) / 10;
-      }
-    } else {
-      // เปลี่ยนช่วง 10 นาทีใหม่ → เพิ่มจุดใหม่
-      buf.label = bucketLabel;
-      buf.inPmArr = [inPm];
-      buf.outPmArr = [outPm];
-      
-      pmChart.data.labels.push(bucketLabel);
-      pmChart.data.datasets[0].data.push(inPm);
-      pmChart.data.datasets[1].data.push(outPm);
-      
-      // เก็บไว้ไม่เกิน 18 จุด (3 ชั่วโมง ÷ 10 นาที)
-      if (pmChart.data.labels.length > 18) {
-        pmChart.data.labels.shift();
-        pmChart.data.datasets[0].data.shift();
-        pmChart.data.datasets[1].data.shift();
-      }
-    }
-    pmChart.update('none');
-  }
+  // Server averages include measurements from before this page opened.
+  if (Date.now() - lastChartFetch >= 60000) void initChart();
 }
 
 // =====================================================================
@@ -489,7 +427,7 @@ function updateUI(d) {
 // เหมือนเปิดช่องสื่อสารถาวรระหว่างเบราว์เซอร์กับเซิร์ฟเวอร์
 // ทำให้รับข้อมูลได้ทันทีโดยไม่ต้องกดรีเฟรชหน้าเว็บ
 // =====================================================================
-const socket = io('http://localhost:3000');
+const socket = io();
 
 // เมื่อเชื่อมต่อสำเร็จ
 socket.on('connect', () => {
@@ -500,7 +438,8 @@ socket.on('connect', () => {
 // เมื่อหลุดการเชื่อมต่อ
 socket.on('disconnect', () => {
   console.log('🔴 WebSocket disconnected');
-  document.querySelector('.live-pill').style.borderColor = 'rgba(248,81,73,0.5)';
+  clearTimeout(sensorTimeout);
+  setDeviceOffline();
 });
 
 // =====================================================================
@@ -509,6 +448,7 @@ socket.on('disconnect', () => {
 // และเปลี่ยนหน้าเว็บให้แสดงสถานะ OFFLINE
 // =====================================================================
 let sensorTimeout;
+let receivedLiveData = false;
 function setDeviceOffline() {
   // เปลี่ยนสถานะเป็น OFFLINE (แดง)
   const pill = document.querySelector('.live-pill');
@@ -518,7 +458,7 @@ function setDeviceOffline() {
   pill.style.borderColor = 'rgba(248,81,73,0.5)';
   
   // ล้างค่าตัวเลขทั้งหมดเป็นขีด (-) เพื่อไม่ให้ผู้ใช้สับสนกับข้อมูลเก่า
-  const clearIds = ['in_pm25', 'out_pm25', 'in_co2', 'in_gas', 'out_gas', 'aqi-val', 'temp-val', 'humidity-val', 'alert-count'];
+  const clearIds = ['in_pm25', 'out_pm25', 'in_co2', 'in_gas', 'out_gas', 'aqi-val', 'temp-val', 'humidity-val'];
   clearIds.forEach(id => {
       const el = document.getElementById(id);
       if(el) {
@@ -530,14 +470,18 @@ function setDeviceOffline() {
   document.getElementById('bar-out').style.width = '0%';
   
   // ล้างการแจ้งเตือนทั้งหมด
-  alertCount = 0;
+  syncAlertDay();
   const alertBanner = document.getElementById('alert-banner');
   if(alertBanner) alertBanner.classList.remove('show');
   document.body.classList.remove('alert-state');
   
   // แสดงพัดลมทั้ง 2 ตัวเป็นสถานะปิดบนหน้าจอ
-  syncFanUI('filt', false);
-  syncFanUI('vent', false);
+  for (const id of ['filt', 'vent']) {
+    document.getElementById('fc-' + id).classList.remove('on');
+    document.getElementById('tog-' + id).checked = false;
+    document.getElementById('tl-' + id).textContent = 'UNKNOWN';
+    document.getElementById('badge-' + id).textContent = 'No telemetry';
+  }
 }
 
 function resetSensorTimeout() {
@@ -553,10 +497,11 @@ function resetSensorTimeout() {
 }
 
 // เริ่มนับถอยหลังทันทีที่โหลดหน้าเว็บ
-resetSensorTimeout();
+sensorTimeout = setTimeout(setDeviceOffline, 15000);
 
 // รับข้อมูลจาก Server แบบ Real-time ทันทีที่ ESP32 ส่งเข้ามา
 socket.on('sensorData', (d) => {
+  receivedLiveData = true;
   console.log('📡 Real-time data:', d);
   resetSensorTimeout();
   updateUI(d);
@@ -568,96 +513,39 @@ socket.on('sensorData', (d) => {
 // แล้ววาดเป็นกราฟเส้น 2 เส้น: ฝุ่นในบ้าน (เขียว) และฝุ่นนอกบ้าน (ฟ้า)
 // =====================================================================
 let pmChart;
+let chartFetchPending = false;
+let lastChartFetch = 0;
 async function initChart() {
+  if (chartFetchPending) return;
+  chartFetchPending = true;
+  lastChartFetch = Date.now();
   try {
-    const res = await fetch('/api/history');
-    const data = await res.json();
-    
-    if (!Array.isArray(data) || data.length === 0) return;
-
-    const labels = data.map(d => {
-      const dt = new Date(d.created_at || Date.now());
-      return dt.getHours().toString().padStart(2,'0') + ':' + dt.getMinutes().toString().padStart(2,'0');
-    });
-    const inPm = data.map(d => d.in_pm25 || 0);
-    const outPm = data.map(d => d.out_pm25 || 0);
-
-    const ctx = document.getElementById('pmChart').getContext('2d');
-    pmChart = new Chart(ctx, {
+    if (!pmChart) {
+      pmChart = new Chart(document.getElementById('pmChart').getContext('2d'), {
         type: 'line',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Indoor PM2.5',
-                    data: inPm,
-                    borderColor: '#3fb950',
-                    backgroundColor: 'rgba(63, 185, 80, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 0,
-                    pointHitRadius: 10
-                },
-                {
-                    label: 'Outdoor PM2.5',
-                    data: outPm,
-                    borderColor: '#58a6ff',
-                    backgroundColor: 'rgba(88, 166, 255, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 0,
-                    pointHitRadius: 10
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'top',
-                    labels: {
-                        color: '#7d8590',
-                        font: { family: "'IBM Plex Mono', monospace", size: 10 },
-                        usePointStyle: true,
-                        boxWidth: 6
-                    }
-                },
-                tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    backgroundColor: 'rgba(22, 27, 34, 0.9)',
-                    titleColor: '#e6edf3',
-                    bodyColor: '#e6edf3',
-                    borderColor: 'rgba(255,255,255,0.1)',
-                    borderWidth: 1
-                }
-            },
-            scales: {
-                x: {
-                    grid: { color: 'rgba(255,255,255,0.05)' },
-                    ticks: { color: '#7d8590', maxTicksLimit: 6, font: { size: 10 } }
-                },
-                y: {
-                    beginAtZero: true,
-                    grid: { color: 'rgba(255,255,255,0.05)' },
-                    ticks: { color: '#7d8590', font: { size: 10 } }
-                }
-            },
-            interaction: {
-                mode: 'nearest',
-                axis: 'x',
-                intersect: false
-            }
-        }
-    });
+        data: { labels: [], datasets: [
+          { label: 'Indoor PM2.5', data: [], borderColor: '#3fb950', tension: 0.3, spanGaps: false },
+          { label: 'Outdoor PM2.5', data: [], borderColor: '#58a6ff', tension: 0.3, spanGaps: false }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true }, x: { ticks: { maxTicksLimit: 6 } } } }
+      });
+    }
+    const res = await fetch('/api/history');
+    if (!res.ok) throw new Error('History HTTP ' + res.status);
+    const rows = await res.json();
+    if (!Array.isArray(rows)) throw new Error('Invalid history');
+    pmChart.data.labels = rows.map(row => new Date(Number(row.bucket_ms)).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
+    const value = x => x == null ? null : Number(x);
+    pmChart.data.datasets[0].data = rows.map(row => value(row.in_pm25));
+    pmChart.data.datasets[1].data = rows.map(row => value(row.out_pm25));
+    pmChart.update('none');
   } catch (err) {
-    console.error("Error setting up chart:", err);
+    console.error('Chart fetch failed:', err);
+  } finally {
+    chartFetchPending = false;
   }
 }
-
 
 // =====================================================================
 // ฟังก์ชันโหลดข้อมูลครั้งแรกตอนเปิดหน้าเว็บ
@@ -667,12 +555,23 @@ async function initChart() {
 async function fetchInitialData() {
   try {
     const res = await fetch('/api/latest');   // เรียก API ดึงข้อมูลล่าสุด
+    if (!res.ok) throw new Error('Latest HTTP ' + res.status);
     const d = await res.json();
-    if (d && d.id) updateUI(d);               // ถ้ามีข้อมูล ให้อัปเดตหน้าจอเลย
+    // An HTTP snapshot must not replace newer socket telemetry.
+    if (!receivedLiveData) {
+      const age = Date.now() - new Date(d.created_at).getTime();
+      if (d.id && age >= -5000 && age <= 15000) {
+        resetSensorTimeout();
+        updateUI(d);
+      } else setDeviceOffline();
+    }               // ถ้ามีข้อมูล ให้อัปเดตหน้าจอเลย
     
-    await initChart();                        // วาดกราฟจากข้อมูลประวัติ
+
   } catch (err) {
     console.error('Initial fetch error:', err);
+    if (!receivedLiveData) setDeviceOffline();
+  } finally {
+    await initChart();
   }
 }
 fetchInitialData(); // เรียกทำงานทันทีเมื่อหน้าเว็บโหลดเสร็จ

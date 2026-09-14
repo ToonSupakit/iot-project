@@ -1,209 +1,145 @@
-// =====================================================================
-// ไฟล์: server.js
-// คำอธิบาย: เซิร์ฟเวอร์หลังบ้าน (Backend) ทำหน้าที่ 3 อย่าง:
-//   1. รับข้อมูลจาก ESP32 แล้วบันทึกลงฐานข้อมูล MySQL
-//   2. ส่งข้อมูลต่อไปยังหน้าเว็บแบบเรียลไทม์ผ่าน Socket.IO
-//   3. ให้บริการ API สำหรับหน้าเว็บดึงข้อมูลประวัติ
-// วิธีรัน: พิมพ์ "node server.js" ใน Terminal
-// =====================================================================
+const express = require('express');
+const mysql = require('mysql2');
+const http = require('node:http');
+const path = require('node:path');
+const { timingSafeEqual } = require('node:crypto');
+const { Server } = require('socket.io');
 
-// --- นำเข้าไลบรารี (Library) ที่จำเป็น ---
-const express = require('express');        // Express = เฟรมเวิร์คสำหรับสร้างเว็บเซิร์ฟเวอร์
-const mysql = require('mysql2');           // mysql2 = ไลบรารีสำหรับเชื่อมต่อฐานข้อมูล MySQL
-const cors = require('cors');              // CORS = อนุญาตให้เว็บจากที่อื่นเรียกใช้ API ได้
-const http = require('http');              // http = โมดูลพื้นฐานสำหรับสร้าง HTTP Server
-const { Server } = require('socket.io');   // Socket.IO = ไลบรารีสำหรับส่งข้อมูลแบบเรียลไทม์ (ไม่ต้องรีเฟรชหน้าเว็บ)
+function validateTelemetry(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+    const ranges = {
+        in_pm: [0, 999, true], out_pm: [0, 999, true],
+        in_co2: [0, 65535, true], in_gas: [0, 4095, true],
+        out_gas: [0, 4095, true], temp: [-50, 100, false],
+        humidity: [0, 100, false]
+    };
+    for (const [key, [min, max, integer]] of Object.entries(ranges)) {
+        const value = body[key];
+        // null means unavailable; missing keys are invalid.
+        if (value === null) continue;
+        if (typeof value !== 'number' || !Number.isFinite(value) ||
+            value < min || value > max || (integer && !Number.isInteger(value))) return false;
+    }
+    return [0, 1].includes(body.vent) && [0, 1].includes(body.filt) &&
+        !(body.vent === 1 && body.filt === 1);
+}
 
+function createApp({ db, io, apiKey }) {
+    if (!apiKey || apiKey.length < 16) throw new Error('DEVICE_API_KEY must contain at least 16 characters');
+    const app = express();
+    app.disable('x-powered-by');
+    app.use(express.json({ limit: '4kb' }));
+    app.use(express.static(path.join(__dirname, 'public')));
 
-
-// =====================================================================
-// สร้างเซิร์ฟเวอร์
-// =====================================================================
-const app = express();                     // สร้างแอป Express
-const server = http.createServer(app);     // ครอบ Express ด้วย HTTP Server เพื่อใช้ร่วมกับ Socket.IO
-const io = new Server(server, {
-    cors: { origin: '*' }                  // อนุญาตให้ทุก URL เชื่อมต่อ Socket.IO ได้
-});
-
-// =====================================================================
-// เชื่อมต่อฐานข้อมูล MySQL
-// ใช้ Pool แทน Connection เดี่ยว เพื่อรองรับหลายคำขอพร้อมกัน
-// =====================================================================
-const db = mysql.createPool({
-    host: 'localhost',         // ฐานข้อมูลอยู่ในเครื่องเดียวกับเซิร์ฟเวอร์
-    user: 'root',              // ชื่อผู้ใช้ MySQL
-    password: '',              // รหัสผ่าน (ว่าง = ไม่มีรหัส เหมาะสำหรับการพัฒนา)
-    database: 'smart_air_db'   // ชื่อฐานข้อมูลที่จะใช้
-});
-
-// =====================================================================
-// ตั้งค่า Middleware (ตัวช่วยที่ทำงานก่อนถึง API ทุกครั้ง)
-// =====================================================================
-app.use(cors());                           // เปิดให้เรียก API ข้ามโดเมนได้
-app.use(express.json());                   // แปลงข้อมูล JSON ที่ส่งมาให้อ่านได้อัตโนมัติ
-app.use(express.static(__dirname));        // เสิร์ฟไฟล์ HTML, CSS, JS ในโฟลเดอร์เดียวกัน
-
-
-// =====================================================================
-// API ที่ 1: รับข้อมูลจาก ESP32 (POST /api/log)
-// ESP32 จะส่งข้อมูลมาที่นี่ทุกๆ 2 วินาที
-// =====================================================================
-app.post('/api/log', (req, res) => {
-    // แกะข้อมูลจาก JSON ที่ ESP32 ส่งมา
-    // ตัวอย่าง: {"in_pm":25,"in_co2":400,"in_gas":1500,"out_pm":0,"out_gas":0,"vent":1,"filt":0,"temp":30.5,"humidity":65}
-    const { in_pm, in_co2, in_gas, out_pm, out_gas, vent, filt, temp, humidity } = req.body; 
-    
-    // เขียนคำสั่ง SQL เพื่อบันทึกข้อมูลลงตาราง sensor_data
-    // เครื่องหมาย ? คือตัวแทนค่า (Placeholder) เพื่อป้องกัน SQL Injection (การแฮ็กผ่านช่องกรอกข้อมูล)
-    const sql = `INSERT INTO sensor_data (in_pm25, in_co2, in_gas, out_pm25, out_gas, vent_fan_status, filt_fan_status, temperature, humidity) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    
-    // สั่งให้ MySQL รันคำสั่ง SQL โดยใส่ค่าจริงแทนเครื่องหมาย ?
-    db.query(sql, [in_pm, in_co2, in_gas, out_pm, out_gas, vent, filt, temp, humidity], (err) => {
-        if (err) {
-            // ถ้าบันทึกไม่สำเร็จ → แสดง Error และตอบกลับ ESP32 ด้วยรหัส 500 (Server Error)
-            console.error("DB Error:", err);
-            return res.status(500).json(err);
+    app.post('/api/log', (req, res) => {
+        const received = Buffer.from(req.get('X-Device-Key') || '');
+        const expected = Buffer.from(apiKey);
+        if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
+            return res.status(401).json({ error: 'Unauthorized device' });
         }
-        console.log("Data Saved:", req.body);
-
-        // =====================================================================
-        // จุดสำคัญ: กระจายข้อมูลไปหน้าเว็บทันทีผ่าน Socket.IO
-        // io.emit() จะส่งข้อมูลไปยัง "ทุกเบราว์เซอร์" ที่เปิดหน้าเว็บอยู่
-        // ทำให้หน้าเว็บอัปเดตแบบเรียลไทม์โดยไม่ต้องกดรีเฟรช
-        // =====================================================================
-        io.emit('sensorData', {
-            in_pm25: in_pm,
-            in_co2: in_co2,
-            in_gas: in_gas,
-            out_pm25: out_pm,
-            out_gas: out_gas,
-            vent_fan_status: vent,
-            filt_fan_status: filt,
-            temperature: temp,
-            humidity: humidity
-        });
-
-        // ตอบกลับ ESP32 ว่าบันทึกสำเร็จ
-        res.json({ message: "Data logged successfully" });
-    });
-});
-
-// =====================================================================
-// API ที่ 2: ดึงข้อมูลล่าสุด 1 แถว (GET /api/latest)
-// หน้าเว็บจะเรียก API นี้ตอนโหลดครั้งแรก เพื่อแสดงข้อมูลทันทีไม่ต้องรอ
-// =====================================================================
-app.get('/api/latest', (req, res) => {
-    // SELECT * = ดึงทุกคอลัมน์, ORDER BY id DESC = เรียงจากใหม่สุด, LIMIT 1 = เอาแค่ 1 แถว
-    db.query("SELECT * FROM sensor_data ORDER BY id DESC LIMIT 1", (err, results) => {
-        if (err) return res.status(500).json(err);
-        // ส่งข้อมูลแถวแรก (ล่าสุด) กลับไป หรือส่งอ็อบเจกต์ว่างถ้าไม่มีข้อมูล
-        res.json(results[0] || {});
-    });
-});
-
-// =====================================================================
-// API ที่ 3: ดึงประวัติสำหรับวาดกราฟ (GET /api/history)
-// จัดกลุ่มข้อมูลทุกๆ 10 นาที และหาค่าเฉลี่ย เพื่อให้กราฟดูสะอาดตา
-// ย้อนหลัง 3 ชั่วโมง = สูงสุด 18 จุดบนกราฟ (180 นาที ÷ 10 = 18)
-// =====================================================================
-app.get('/api/history', (req, res) => {
-    const sql = `
-        SELECT 
-            ROUND(AVG(in_pm25), 1) as in_pm25,     -- หาค่าเฉลี่ยฝุ่นในบ้าน ปัดทศนิยม 1 ตำแหน่ง
-            ROUND(AVG(out_pm25), 1) as out_pm25,    -- หาค่าเฉลี่ยฝุ่นนอกบ้าน
-            DATE_FORMAT(
-                DATE_SUB(created_at, INTERVAL MINUTE(created_at) % 10 MINUTE),
-                '%Y-%m-%d %H:%i:00'
-            ) as created_at                          -- จัดกลุ่มเวลาเป็นช่วง 10 นาที (08:00, 08:10, 08:20, ...)
-        FROM sensor_data 
-        WHERE created_at >= NOW() - INTERVAL 3 HOUR  -- เอาเฉพาะข้อมูลย้อนหลัง 3 ชั่วโมง
-        GROUP BY DATE_FORMAT(
-            DATE_SUB(created_at, INTERVAL MINUTE(created_at) % 10 MINUTE),
-            '%Y-%m-%d %H:%i:00'
-        )
-        ORDER BY created_at ASC                       -- เรียงจากเก่าไปใหม่ (ซ้ายไปขวาบนกราฟ)
-        LIMIT 18                                      -- จำกัดไม่เกิน 18 จุด
-    `;
-    db.query(sql, (err, results) => {
-        if (err) return res.status(500).json(err);
-        res.json(results);
-    });
-});
-
-// =====================================================================
-// API ที่ 4: ดึงประวัติรายวัน (GET /api/history/daily)
-// ใช้ในหน้า history.html สำหรับดูข้อมูลย้อนหลังเป็นรายวัน
-// =====================================================================
-app.get('/api/history/daily', (req, res) => {
-    const sql = `
-        SELECT 
-            DATE(created_at) as date,                  -- วันที่
-            ROUND(AVG(in_pm25), 1) as avg_in_pm,       -- ค่าเฉลี่ยฝุ่นในบ้านทั้งวัน
-            ROUND(AVG(out_pm25), 1) as avg_out_pm,     -- ค่าเฉลี่ยฝุ่นนอกบ้านทั้งวัน
-            ROUND(AVG(in_co2), 1) as avg_in_co2,       -- ค่าเฉลี่ย CO2 ทั้งวัน
-            ROUND(AVG(in_gas), 1) as avg_in_gas,       -- ค่าเฉลี่ยแก๊สในบ้านทั้งวัน
-            ROUND(AVG(out_gas), 1) as avg_out_gas      -- ค่าเฉลี่ยแก๊สนอกบ้านทั้งวัน
-        FROM sensor_data 
-        GROUP BY DATE(created_at)                       -- จัดกลุ่มตามวัน
-        ORDER BY date DESC                              -- เรียงจากวันล่าสุด
-        LIMIT 30                                        -- เก็บ 30 วันล่าสุด
-    `;
-    db.query(sql, (err, results) => {
-        if (err) return res.status(500).json(err);
-        res.json(results);
-    });
-});
-
-// =====================================================================
-// Socket.IO: จัดการการเชื่อมต่อจากหน้าเว็บ
-// เมื่อผู้ใช้เปิดหน้าเว็บ = เชื่อมต่อ (connect)
-// เมื่อปิดหน้าเว็บ = ตัดการเชื่อมต่อ (disconnect)
-// =====================================================================
-io.on('connection', (socket) => {
-    console.log('🌐 Web client connected:', socket.id);
-    socket.on('disconnect', () => {
-        console.log('❌ Web client disconnected:', socket.id);
-    });
-});
-
-// =====================================================================
-// ระบบเคลียร์ข้อมูลเก่าใน DB อัตโนมัติ (Pruning Data)
-// เคลียร์ข้อมูลที่เก่าเกิน 30 วัน วันละ 1 ครั้ง เพื่อป้องกัน DB บวม
-// =====================================================================
-setInterval(() => {
-    const pruneSql = "DELETE FROM sensor_data WHERE created_at < NOW() - INTERVAL 30 DAY";
-    db.query(pruneSql, (err, result) => {
-        if (err) console.error("⚠️ DB Prune Error:", err);
-        else if (result.affectedRows > 0) {
-            console.log(`🧹 Cleaned up ${result.affectedRows} old records from DB.`);
+        if (!validateTelemetry(req.body)) {
+            return res.status(400).json({ error: 'Invalid telemetry: provide all sensor fields as numbers or null, and fan states as 0 or 1' });
         }
-    });
-}, 24 * 60 * 60 * 1000); // ทำงานทุกๆ 24 ชั่วโมง
-
-// =====================================================================
-// เริ่มต้นเซิร์ฟเวอร์ที่ Port 3000
-// หลังจากรันแล้ว สามารถเข้าถึงได้ที่ http://localhost:3000
-// =====================================================================
-server.listen(3000, () => {
-    console.log("🚀 Server + WebSocket running on port 3000");
-
-    // ระบบ UDP Auto-Discovery: คอยตอบสัญญาณค้นหาจาก ESP32 อัตโนมัติ
-    // ทำให้ ESP32 รู้จัก IP ของคอมพิวเตอร์ทันทีโดยไม่ต้องกรอก IP
-    const dgram = require('dgram');
-    const udpSocket = dgram.createSocket('udp4');
-
-    udpSocket.on('message', (msg, rinfo) => {
-        if (msg.toString().includes('AIRWATCH_DISCOVER')) {
-            const reply = Buffer.from('AIRWATCH_SERVER_HERE:3000');
-            udpSocket.send(reply, rinfo.port, rinfo.address, (err) => {
-                if (!err) console.log(`🎯 Auto-Discovery: Paired with ESP32 at ${rinfo.address}`);
+        const { in_pm, in_co2, in_gas, out_pm, out_gas, vent, filt, temp, humidity } = req.body;
+        const sql = `INSERT INTO sensor_data
+            (in_pm25, in_co2, in_gas, out_pm25, out_gas, vent_fan_status, filt_fan_status, temperature, humidity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        db.query(sql, [in_pm, in_co2, in_gas, out_pm, out_gas, vent, filt, temp, humidity], (err) => {
+            if (err) {
+                console.error('Database insert failed:', err.code);
+                return res.status(500).json({ error: 'Unable to save telemetry' });
+            }
+            io.emit('sensorData', {
+                in_pm25: in_pm, in_co2, in_gas, out_pm25: out_pm, out_gas,
+                vent_fan_status: vent, filt_fan_status: filt,
+                temperature: temp, humidity, created_at: new Date().toISOString()
             });
-        }
+            res.status(201).json({ message: 'Data logged successfully' });
+        });
     });
 
-    udpSocket.bind(41234, () => {
-        udpSocket.setBroadcast(true);
-        console.log("📡 Auto-Discovery: UDP Radar is active on port 41234");
+    function queryRows(res, sql, latest = false) {
+        db.query(sql, (err, rows) => {
+            if (err) {
+                console.error('Database read failed:', err.code);
+                return res.status(500).json({ error: 'Unable to read telemetry' });
+            }
+            res.json(latest ? (rows[0] || {}) : rows);
+        });
+    }
+    app.get('/api/latest', (req, res) => {
+        queryRows(res, 'SELECT * FROM sensor_data ORDER BY id DESC LIMIT 1', true);
     });
-});
+    // Unix milliseconds identify buckets without browser/server timezone ambiguity.
+    app.get('/api/history', (req, res) => {
+        queryRows(res, `SELECT * FROM (
+            SELECT ROUND(AVG(in_pm25), 1) AS in_pm25,
+                   ROUND(AVG(out_pm25), 1) AS out_pm25,
+                   FLOOR(UNIX_TIMESTAMP(created_at) / 600) * 600000 AS bucket_ms
+            FROM sensor_data
+            WHERE created_at >= NOW() - INTERVAL 3 HOUR
+            GROUP BY FLOOR(UNIX_TIMESTAMP(created_at) / 600)
+            ORDER BY bucket_ms DESC LIMIT 18
+        ) AS recent ORDER BY bucket_ms ASC`);
+    });
+    app.get('/api/history/daily', (req, res) => {
+        queryRows(res, `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS date,
+            ROUND(AVG(in_pm25), 1) AS avg_in_pm,
+            ROUND(AVG(out_pm25), 1) AS avg_out_pm,
+            ROUND(AVG(in_co2), 1) AS avg_in_co2,
+            ROUND(AVG(in_gas), 1) AS avg_in_gas,
+            ROUND(AVG(out_gas), 1) AS avg_out_gas
+            FROM sensor_data
+            WHERE created_at >= NOW() - INTERVAL 30 DAY
+            GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d')
+            ORDER BY date DESC LIMIT 30`);
+    });
+    app.use((err, req, res, next) => {
+        if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Payload too large' });
+        if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
+        console.error('Request failed:', err.message);
+        res.status(500).json({ error: 'Internal server error' });
+    });
+    return app;
+}
+
+function startServer() {
+    const apiKey = process.env.DEVICE_API_KEY;
+    if (!apiKey || apiKey.length < 16) throw new Error('Set DEVICE_API_KEY (at least 16 characters) before starting');
+    const port = Number(process.env.PORT || 3000);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
+    const db = mysql.createPool({
+        host: process.env.DB_HOST || 'localhost',
+        port: Number(process.env.DB_PORT || 3306),
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_NAME || 'smart_air_db',
+        timezone: 'local'
+    });
+    let io;
+    const app = createApp({ db, io: { emit: (...args) => io.emit(...args) }, apiKey });
+    const server = http.createServer(app);
+    io = new Server(server);
+    const udp = require('node:dgram').createSocket('udp4');
+    udp.on('error', err => console.error('UDP discovery unavailable:', err.message));
+    udp.on('message', (msg, rinfo) => {
+        if (msg.toString() !== 'AIRWATCH_DISCOVER') return;
+        udp.send(Buffer.from('AIRWATCH_SERVER_HERE:' + port), rinfo.port, rinfo.address,
+            err => { if (err) console.error('UDP response failed:', err.message); });
+    });
+    const prune = () => db.query(
+        'DELETE FROM sensor_data WHERE created_at < NOW() - INTERVAL 30 DAY',
+        err => { if (err) console.error('Database pruning failed:', err.code); }
+    );
+    server.listen(port, () => {
+        console.log('AirWatch listening on port ' + port);
+        udp.bind(41234);
+        prune();
+    });
+    const timer = setInterval(prune, 24 * 60 * 60 * 1000);
+    timer.unref();
+    return { server, io, db, udp };
+}
+
+module.exports = { createApp, validateTelemetry };
+if (require.main === module) startServer();

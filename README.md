@@ -1,141 +1,125 @@
-# Smart Air Quality Monitoring & Automated Dual-Fan Control System (IoT)
+# AirWatch — ระบบติดตามคุณภาพอากาศและควบคุมพัดลม
 
-> **Context for AI Assistants & Developers:**  
-> This project is a Dual-Zone (Indoor & Outdoor) Environmental Air Quality Monitoring and Automated Control System. It utilizes an **ESP32 microcontroller** to acquire telemetry from multiple sensors, evaluates a **Comparative Decision Algorithm** to actuate 5V DC relay-controlled fans (Filtration vs. Ventilation), and transmits structured data via **HTTP POST / JSON** to a **Node.js Express backend** with **MySQL database archiving** and **Socket.IO low-latency real-time web telemetry**.
+ESP32 อ่านเซนเซอร์และควบคุมพัดลมในบอร์ด ส่ง HTTP JSON ทุก 2.5 วินาทีไปยัง Node.js / Express ซึ่งบันทึก MySQL แล้วส่ง event `sensorData` ผ่าน Socket.IO ให้หน้าเว็บ
 
----
+## อุปกรณ์และโหมดทำงาน
 
-## 🏗 System Architecture & Telemetry Pipeline
+- ESP32; PMS ผ่าน UART2 RX16/TX17; AHT10/20 และ ENS160 ผ่าน I2C SDA21/SCL22
+- MQ-2 ในบ้าน GPIO34; รีเลย์ active-low: ระบายอากาศ GPIO25, กรอง GPIO26
+- ตั้ง `HAS_OUTDOOR_SENSORS false` สำหรับพัดลมเดียว (ค่าเริ่มต้น)
+- โหมดสองพัดลม: เปลี่ยนเป็น `true` เมื่อมี PMS นอกบ้าน RX4/TX5, MQ-2 GPIO35 และพัดลมกรองครบ
 
+| เงื่อนไข | พัดลมเดียว | สองพัดลม |
+| --- | --- | --- |
+| ช่วงเริ่มต้น 30 วินาทีหลัง setup | ปิด | ปิด |
+| MQ-2 ในบ้าน >2500 ADC | ไม่ใช้เป็นเงื่อนไขควบคุมในโหมดนี้ | ระบายอากาศ เปิด / กรอง ปิด |
+| PM ในบ้าน >35 | เปิดระบายอากาศ | ระบายเมื่อ PM นอกบ้านมีข้อมูลและต่ำกว่าในบ้าน มิฉะนั้นกรอง |
+| PM ในบ้าน <30 (ไม่มีเงื่อนไขที่มีลำดับสูงกว่า) | ปิด | ปิด |
+| PM 30–35 | คงสถานะ | คงสถานะ ยกเว้นข้อมูลนอกบ้านหายขณะระบาย: เปลี่ยนเป็นกรอง |
+| PM ในบ้านไม่มีข้อมูลหรือเก่าเกิน 5 วินาที | คงสถานะพัดลมล่าสุด | ปิดระบาย / เปิดกรอง ยกเว้นเงื่อนไขแก๊สข้างต้น |
+
+เว้นระยะเปลี่ยนสถานะรีเลย์อย่างน้อย 5 วินาที ค่า ENS160 คือ **eCO₂** และยังไม่ใช้ควบคุมพัดลม MQ-2 แสดงเป็น **ADC ดิบ** ไม่แปลงเป็น ppm โดยใช้ค่า calibration สมมติ เกณฑ์แก๊สเป็นค่าทดลองของต้นแบบ ไม่ใช่ระบบรับรองตรวจจับแก๊สรั่วหรือไฟไหม้
+
+## ติดตั้งเซิร์ฟเวอร์
+
+ใช้ Node.js 20 ขึ้นไปและ MySQL ติดตั้ง dependencies ด้วย `npm ci`
+
+### ฐานข้อมูลใหม่
+
+รัน `db/schema.sql` ผ่าน MySQL client หรือ phpMyAdmin เพื่อสร้างฐานข้อมูล ตาราง และ index
+
+### อัปเกรดฐานข้อมูลเดิม
+
+สำรองข้อมูลแล้วรัน `db/migrate-nullable-sensors.sql` **ก่อนอัปเดต firmware** เพื่อให้ค่าที่ไม่มีข้อมูลเก็บเป็น SQL NULL ได้ ไฟล์นี้ไม่ลบประวัติเดิม และไม่ตีความค่า 0 เก่าย้อนหลังว่าเป็นข้อมูลหาย หากยังไม่มี index ของ `created_at` ให้เพิ่มตามคำสั่งท้ายไฟล์เพียงครั้งเดียว
+
+### ตั้งค่า environment
+
+| ตัวแปร | ค่าเริ่มต้น / ความหมาย |
+| --- | --- |
+| DEVICE_API_KEY | จำเป็น: รหัสสุ่ม 16–64 ตัวอักษร ต้องตรงกับบอร์ด |
+| PORT | 3000 |
+| DB_HOST | localhost |
+| DB_PORT | 3306 |
+| DB_USER | root (ควรใช้บัญชีเฉพาะแอปเมื่อใช้งานจริง) |
+| DB_PASSWORD | ว่าง |
+| DB_NAME | smart_air_db |
+
+ตัวอย่าง PowerShell สร้าง key ไว้ใน session แล้วเริ่มเซิร์ฟเวอร์:
+
+```powershell
+npm ci
+$env:DEVICE_API_KEY = node -e "console.log(require('node:crypto').randomBytes(24).toString('hex'))"
+$env:DB_PASSWORD = 'YOUR_DATABASE_PASSWORD'
+npm start
 ```
-[ Indoor Sensors ] ──┐
- (PMS, ENS, AHT, MQ) ├──► [ ESP32 Microcontroller ] ──(HTTP POST JSON)──► [ Node.js / Express Backend ]
-[ Outdoor Sensors ] ──┘          │                                               │              │
- (PMS, MQ-2)                     ▼                                               ▼              ▼
-                       [ Relay Actuators ]                              [ MySQL Database ] [ Socket.IO ]
-                    (Vent Fan / Filt Fan)                                      │                │
-                                                                               └───────► ┌──────┴──────┐
-                                                                                         │ Web Dashboard│
-                                                                                         └──────────────┘
-```
 
----
+ดูค่า `$env:DEVICE_API_KEY` ใน terminal ของตนเองเพื่อนำไปกรอกบอร์ด เก็บ key ไว้เพื่อใช้ซ้ำเมื่อเปิด session ใหม่ อย่าสร้าง key ใหม่ทุกครั้งถ้าไม่ได้เปลี่ยนในบอร์ดด้วย และห้าม commit key จริง
 
-## 🛠 System Components & Technical Specifications
+เปิด `http://localhost:3000` บนเครื่องเซิร์ฟเวอร์ หรือ `http://<SERVER_IP>:3000` จากมือถือบน Wi-Fi เดียวกัน หน้าเว็บใช้ relative API และ `io()` จึงเชื่อมต่อเครื่องที่กำลังเปิดอยู่ เปิด firewall ให้ TCP 3000 (หรือ PORT ที่ตั้ง) และ UDP 41234 ภายใน LAN
 
-### 1. Hardware & Sensor Specs
-- **Microcontroller:** ESP32 Development Board (Wi-Fi 802.11 b/g/n, Dual-Core 240MHz).
-- **Indoor Sensors:**
-  - **PMS5003:** Laser scattering PM2.5 particle sensor (UART interface).
-  - **ENS160:** MOX Multi-Gas & eCO₂/TVOC sensor (I2C interface).
-  - **AHT10 / AHT20:** High-precision Temperature & Relative Humidity sensor (I2C interface).
-  - **MQ-2:** Combustible gas, LPG, and smoke sensor (Analog pin).
-- **Outdoor Sensors:**
-  - **PMS5003:** Outdoor laser dust sensor (UART interface).
-  - **MQ-2:** Outdoor gas/smoke sensor (Analog pin).
-- **Actuators & Relays:**
-  - **2-Channel 5V Relay Module:** Optocoupler isolated to switch 5V DC brushless fans.
-  - **Filtration Fan:** 5V DC axial fan coupled with a HEPA filter (air recirculation).
-  - **Ventilation Fan:** 5V DC axial fan for fresh outdoor air intake.
-  - **Test Enclosure:** Scaled residential room chamber (35 × 45 × 25 cm, ~39.4L volume).
+## ติดตั้ง firmware
 
----
+1. เปิด `firmware.ino` ใน Arduino IDE; หาก IDE สร้างโฟลเดอร์ sketch ให้ใช้ชื่อโฟลเดอร์ตรงกับ sketch
+2. ติดตั้ง ESP32 board package และ libraries: WiFiManager, Adafruit AHTX0, SparkFun ENS160, PMS Library
+3. เลือกบอร์ดและพอร์ต แล้วอัปโหลด
+4. ครั้งแรกบอร์ดเปิด `AirWatch-Setup` ให้เชื่อมต่อจากมือถือ เลือก Wi-Fi และกรอก Server IP กับ Device API key ที่ตรงกับเซิร์ฟเวอร์
+5. ระบบเก็บ key/IP ใน Preferences ไม่ใส่ key จริงใน repository หากไม่มี key ที่ครบ 16 ตัวอักษร จะเปิด portal อีกครั้งเมื่อรีบูต
+6. ต้องการเปลี่ยน key ภายหลัง: ล้าง flash/NVS ผ่านตัวเลือก Erase All Flash ใน Arduino IDE แล้วตั้ง Wi-Fi/IP/key ใหม่
 
-### 2. Comparative Control Logic & Decision Algorithm
+Watchdog ของ loop เริ่มหลัง captive portal จบ เพื่อไม่ตัดการตั้งค่าที่ใช้ได้ถึง 180 วินาที รองรับรูปแบบ API ของ ESP-IDF 4 และ 5 ขึ้นไป โดยตรวจผลลัพธ์การตั้งค่า ดู [เอกสาร Watchdog ของ Espressif](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/wdts.html)
 
-The ESP32 runs a continuous non-blocking loop to evaluate indoor vs. outdoor air quality:
+UDP discovery ค้นหา IP และ port ใน LAN หากส่งล้มเหลวต่อเนื่อง 3 ครั้งจะค้นหาใหม่ได้ทุก 30 วินาที เฉพาะปัญหาเครือข่าย/เซิร์ฟเวอร์ HTTP 2xx เท่านั้นที่นับว่าสำเร็จ 401 หมายถึง key ไม่ตรง และ 400 หมายถึง payload ไม่ถูกต้อง
 
-| Condition | Indoor Air Status | Outdoor Air Status | Actuation Mode | Active Fan |
-| :--- | :--- | :--- | :--- | :--- |
-| **All Normal** | PM2.5 ≤ 35, CO₂ ≤ 1000, Gas Normal | N/A | **Standby Mode** | None (Fans OFF) |
-| **Polluted Indoor** | PM2.5 > 35 or CO₂ > 1000 or Gas High | **Cleaner than Indoor** (Outdoor PM < Indoor PM) | **Ventilation Mode** | Ventilation Fan ON (Fresh Air Intake) |
-| **Polluted Indoor** | PM2.5 > 35 or CO₂ > 1000 or Gas High | **More Polluted** (Outdoor PM ≥ Indoor PM) | **Filtration Mode** | Filtration Fan ON (HEPA Recirculation) |
+## ข้อมูลและหน้าเว็บ
 
----
-
-## 📡 API Payload & Database Schema
-
-### 1. HTTP POST Payload Contract (`POST /api/log`)
-The ESP32 sends a JSON payload every 2 seconds to the backend server:
+`POST /api/log` ต้องส่ง header `X-Device-Key` พร้อม JSON เช่น:
 
 ```json
 {
   "in_pm": 38,
   "in_co2": 460,
   "in_gas": 1198,
-  "out_pm": 87,
-  "out_gas": 476,
-  "vent": 0,
-  "filt": 1,
+  "out_pm": null,
+  "out_gas": null,
+  "vent": 1,
+  "filt": 0,
   "temp": 29.7,
   "humidity": 79.43
 }
 ```
 
-### 2. MySQL Database Schema (`smart_air_db.sensor_data`)
+ทุก field ต้องมี ค่าเซนเซอร์ใช้ number หรือ null; พัดลมใช้ 0/1 และห้ามเปิดพร้อมกัน ค่า 0 เป็นข้อมูลจริง ส่วน null คือไม่มีข้อมูล/หมดอายุ Backend ตรวจชนิดและช่วงค่า จำกัด request 4 KB และไม่ส่งรายละเอียด SQL กลับไปให้ client
 
-```sql
-CREATE TABLE IF NOT EXISTS sensor_data (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    in_pm25 INT NOT NULL,
-    in_co2 INT NOT NULL,
-    in_gas INT NOT NULL,
-    out_pm25 INT DEFAULT 0,
-    out_gas INT DEFAULT 0,
-    vent_fan_status TINYINT(1) DEFAULT 0,
-    filt_fan_status TINYINT(1) DEFAULT 0,
-    temperature FLOAT DEFAULT 0,
-    humidity FLOAT DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+- `GET /api/latest`: แถวล่าสุด พร้อม `created_at`
+- `GET /api/history`: ค่าเฉลี่ย 10 นาที สูงสุด 18 ช่วงล่าสุดใน 3 ชั่วโมง พร้อม `bucket_ms` เป็น Unix milliseconds
+- `GET /api/history/daily`: ค่าเฉลี่ยรายวันสูงสุด 30 วัน วันที่อ้างอิง timezone ของ MySQL session
+- Socket.IO event: `sensorData` หลังบันทึกสำเร็จ พร้อม timestamp
+- กราฟสร้างได้แม้ฐานข้อมูลว่าง ใช้ค่าเฉลี่ยจากเซิร์ฟเวอร์และรีเฟรชไม่เกินนาทีละครั้งเมื่อมีข้อมูลสด; NULL แสดงช่องว่าง ไม่ใช่ 0
+- เมื่อไม่มี telemetry 15 วินาที หน้าเว็บแสดง OFFLINE และสถานะพัดลม UNKNOWN ไม่อ้างว่าพัดลมหยุด
+- แจ้งเตือนเมื่อเข้าสู่ช่วงฝุ่นสูงหรือระดับรุนแรงขึ้น; เก็บจำนวนรายวันใน browser และจำกัด log 100 รายการ จำนวนไม่ใช่สถิติรวมทุก browser
+- AQI ใน UI ยังคงสูตรเดิมของต้นแบบ ไม่ใช่ค่า AQI เฉลี่ยตามมาตรฐานที่รับรอง
 
----
+เสิร์ฟเฉพาะไฟล์ใน `public/` อ่าน dashboard/API ได้ภายในเครือข่ายที่เข้าถึงเซิร์ฟเวอร์ได้ รหัสอุปกรณ์ป้องกันการเขียนข้อมูลเท่านั้น ระบบปัจจุบันใช้ HTTP และ UDP discovery สำหรับ LAN ที่เชื่อถือได้ การขึ้น cloud ยังต้องเพิ่ม HTTPS, การตั้งค่า URL และการเข้าถึงที่เหมาะสม ไม่ใช่เปลี่ยน URL อย่างเดียว
 
-## 📁 Repository Directory Structure
+## โครงสร้าง
 
-```
-project_iot/
-├── firmware.ino        # ESP32 C++ firmware (Sensor acquisition, Control logic, HTTP Client)
-├── server.js           # Node.js Express Server, MySQL Pool, Socket.IO WebSockets provider
-├── index.html          # Real-time Web Dashboard (Live Gauges, Telemetry Cards, Status)
-├── history.html        # Historical Analysis Page (Chart.js Time-series graphs & Data Tables)
-├── style.css           # Modern CSS styling (Glassmorphism, Dark/Light theme, Responsiveness)
-├── package.json        # Node.js Dependencies (express, mysql2, socket.io, cors)
-├── db/                 # SQL init scripts and database setup files
-└── images/             # Documentation diagrams and hardware photos
-```
+- `firmware.ino`: อ่านเซนเซอร์/ควบคุมพัดลม/ส่งข้อมูล
+- `server.js`: API, MySQL, Socket.IO, UDP
+- `public/index.html`, `public/history.html`, `public/style.css`: หน้าเว็บ
+- `db/schema.sql`, `db/migrate-nullable-sensors.sql`: ติดตั้ง/อัปเกรดฐานข้อมูล
+- `tests/`: regression tests
+- `images/`: ภาพประกอบเอกสาร
 
----
+## ทดสอบ
 
-## 🚀 Execution & Setup Instructions
+`npm test` ใช้ Node test runner ทดสอบ validation, HTTP API ด้วย DB จำลอง, การปิดการเข้าถึง source, dashboard ด้วย DOM/Chart จำลอง และ regression ของข้อมูลว่าง/แจ้งเตือน/สถานะ offline ไม่ต้องมีบอร์ดหรือ MySQL เพื่อรันชุดนี้ GitHub Actions รันบน pull request
 
-### 1. Local Database & Server Setup
-```bash
-# 1. Start MySQL (e.g. XAMPP or Standalone MySQL) and create database 'smart_air_db'
-# 2. Install dependencies
-npm install
+ก่อนใช้กับอุปกรณ์ ให้ทดสอบเพิ่มเติม:
 
-# 3. Start the backend server
-npm start
-# Server listens on http://localhost:3000
-```
-
-### 2. Firmware Flashing (ESP32)
-1. Open `firmware.ino` in Arduino IDE.
-2. Ensure libraries `Adafruit AHTX0`, `SparkFun ENS160`, `PMS Library` are installed.
-3. Configure `ssid`, `password`, and `serverUrl` (e.g. `http://<SERVER_IP>:3000/api/log`).
-4. Upload to ESP32.
-
-### 3. Cloud Deployment (Render.com + Aiven MySQL)
-- **Backend:** Host `server.js` on **Render.com** (Web Service, Node.js environment).
-- **Database:** Connect `mysql2.createPool()` to **Aiven Cloud Managed MySQL**.
-- **HTTPS URL:** Update `serverUrl` in `firmware.ino` to `https://<YOUR_RENDER_APP>.onrender.com/api/log`.
-
----
-
-## 💡 Information for AI Assistants
-When assisting with this codebase:
-- **Firmware (`firmware.ino`):** Uses active streaming non-blocking reads for PMS sensors. Pins: Vent Fan (GPIO 25), Filt Fan (GPIO 26), Indoor PMS Serial (UART2 RX 16, TX 17).
-- **Backend (`server.js`):** Routes `POST /api/log` for incoming telemetry, emits `sensor_update` via Socket.IO, and provides `GET /api/history` for querying historical records.
-- **Frontend (`index.html` & `history.html`):** Renders real-time metrics, dynamically toggles fan status badges, and renders interactive Chart.js line charts.
+1. ตั้งค่า Wi-Fi ค้างเกิน 30 วินาที: บอร์ดต้องไม่ถูก loop watchdog รีสตาร์ท
+2. ถอด PMS: ภายใน 5 วินาทีค่าเป็นไม่มีข้อมูล และพัดลมทำตามตาราง; ต่อกลับต้องอ่านได้
+3. ทดสอบทั้งโหมดพัดลมเดียวและสองพัดลม รวมการหายของ PMS นอกบ้าน
+4. เปลี่ยน IP เซิร์ฟเวอร์: ต้องค้นหาใหม่หลังล้มเหลวตามเงื่อนไข
+5. ป้อน key ผิด/หยุด MySQL: firmware ต้องรายงานความล้มเหลว ไม่บอกว่าบันทึกสำเร็จ
+6. เปิดจากมือถือ: ข้อมูลสด ประวัติ และกราฟต้องมาจากเครื่องเซิร์ฟเวอร์
+7. HTTP ยังเป็น synchronous และอาจหน่วงการอ่านเซนเซอร์ระหว่างเครือข่ายล้มเหลว ต้องวัด latency ของการควบคุมบนบอร์ดจริง

@@ -33,14 +33,19 @@
   #include "soc/soc.h"          // ไลบรารีสำหรับตั้งค่าระดับฮาร์ดแวร์ของ ESP32
   #include "soc/rtc_cntl_reg.h" // ไลบรารีสำหรับปิดระบบตรวจจับไฟตก (Brown-out)
   #include <Preferences.h>      // ไลบรารีสำหรับบันทึกค่า Server IP ลงความจำถาวรของ ESP32
+  #include <esp_idf_version.h>
+  #include <math.h>
   #include <esp_task_wdt.h>     // ★ ไลบรารี Watchdog Timer ป้องกัน ESP32 ค้าง จะรีสตาร์ทอัตโนมัติ
 
   // =====================================================================
   // ตัวแปรเก็บ Server IP และระบบ UDP Auto-Discovery
   // =====================================================================
   Preferences preferences;
-  char server_ip[40] = "192.168.1.119";
-  char serverUrl[80] = "http://192.168.1.119:3000/api/log";
+  char server_ip[40] = "192.168.1.110";
+  char deviceKey[65] = ""; // Set in AirWatch-Setup; never commit a real key.
+  unsigned int httpFailures = 0;
+  bool watchdogReady = false;
+  char serverUrl[80] = "http://192.168.1.110:3000/api/log";
   WiFiUDP udp;
   bool serverDiscovered = false;
   unsigned long lastDiscoveryAttempt = 0;
@@ -49,6 +54,7 @@
   void discoverServerIP() {
     if (WiFi.status() != WL_CONNECTED) return;
     
+    udp.stop();
     udp.begin(41234);
     Serial.println("📡 Auto-Discovery: Broadcast searching for AirWatch Server...");
     
@@ -62,9 +68,11 @@
       if (packetSize) {
         char replyBuffer[64] = {0};
         udp.read(replyBuffer, sizeof(replyBuffer) - 1);
-        if (strstr(replyBuffer, "AIRWATCH_SERVER_HERE")) {
+        unsigned int discoveredPort = 0;
+        if (sscanf(replyBuffer, "AIRWATCH_SERVER_HERE:%u", &discoveredPort) == 1 &&
+            discoveredPort > 0 && discoveredPort <= 65535) {
           IPAddress serverIP = udp.remoteIP();
-          snprintf(serverUrl, sizeof(serverUrl), "http://%s:3000/api/log", serverIP.toString().c_str());
+          snprintf(serverUrl, sizeof(serverUrl), "http://%s:%u/api/log", serverIP.toString().c_str(), discoveredPort);
           Serial.printf("🎯 Auto-Discovery SUCCESS! Matched Server at: %s\n", serverUrl);
           serverDiscovered = true;
           break;
@@ -130,6 +138,9 @@
   int currentPmValue = 0;              // ค่าฝุ่นในบ้าน
   int currentPmOutValue = 0;           // ค่าฝุ่นนอกบ้าน
 
+  bool pmValid = false, pmOutValid = false;
+  bool ahtValid = false;
+  unsigned long lastCo2ReadTime = 0;
   bool ahtOnline = false;    
   bool ensOnline = false;    
 
@@ -187,6 +198,8 @@
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); 
   #endif
     Serial.begin(115200);
+    // Do not leave this task subscribed while the captive portal blocks.
+    if (esp_task_wdt_status(NULL) == ESP_OK) esp_task_wdt_delete(NULL);
 
     // ★ รอ 3 วินาทีให้ไฟเลี้ยงเสถียรก่อน (ป้องกันเซนเซอร์เพี้ยนตอนเพิ่งเสียบไฟ)
     Serial.println("⏳ Waiting 3 seconds for power stabilization...");
@@ -197,16 +210,6 @@
     pinMode(FAN_FILT_PIN, OUTPUT);
     setVentFan(false);
     setFiltFan(false);
-
-    // ★ เปิด Watchdog Timer: ถ้า ESP32 ค้างเกิน 30 วินาที จะรีสตาร์ทอัตโนมัติ
-    esp_task_wdt_config_t wdt_config = {
-      .timeout_ms = WDT_TIMEOUT * 1000,  // แปลงวินาทีเป็นมิลลิวินาที
-      .idle_core_mask = 0,               // ไม่ monitor idle task
-      .trigger_panic = true              // ค้าง → รีสตาร์ททันที
-    };
-    esp_task_wdt_init(&wdt_config);
-    esp_task_wdt_add(NULL);
-    bootTime = millis();  // ★ จดเวลาเปิดเครื่อง สำหรับ warm-up period 
 
     // (ย้ายการเปิด SerialPMS ไปไว้หลังต่อ WiFi สำเร็จ ป้องกันข้อมูลขยะค้างใน Buffer)
     
@@ -228,6 +231,7 @@
     preferences.begin("airwatch", false);
     String saved_ip = preferences.getString("server_ip", "192.168.1.110");
     saved_ip.toCharArray(server_ip, sizeof(server_ip));
+    preferences.getString("device_key", "").toCharArray(deviceKey, sizeof(deviceKey));
     snprintf(serverUrl, sizeof(serverUrl), "http://%s:3000/api/log", server_ip);
 
     // เชื่อมต่อ WiFi ผ่านระบบ WiFiManager (Captive Portal)
@@ -238,9 +242,13 @@
     // เพิ่มช่องกรอก "Server IP" บนหน้าจอมือถือ
     WiFiManagerParameter custom_server_ip("server_ip", "Server IP (เช่น 192.168.1.110)", server_ip, 40);
     wm.addParameter(&custom_server_ip);
+    WiFiManagerParameter custom_device_key("device_key", "Device API key (16-64 characters)", deviceKey, 64);
+    wm.addParameter(&custom_device_key);
 
     Serial.println("🌐 Connecting to WiFi via WiFiManager...");
-    bool res = wm.autoConnect("AirWatch-Setup"); // ถ้าหา WiFi เดิมไม่เจอ จะปล่อย WiFi ชื่อ AirWatch-Setup
+    bool res = strlen(deviceKey) < 16
+      ? wm.startConfigPortal("AirWatch-Setup")
+      : wm.autoConnect("AirWatch-Setup"); // ถ้าหา WiFi เดิมไม่เจอ จะปล่อย WiFi ชื่อ AirWatch-Setup
 
     if (!res) {
       Serial.println("❌ Failed to connect to WiFi or hit timeout");
@@ -248,9 +256,13 @@
     } else {
       // บันทึกค่า Server IP ที่กรอกจากมือถือลงความจำถาวร (ถ้ามี)
       if (strlen(custom_server_ip.getValue()) > 0) {
-        strncpy(server_ip, custom_server_ip.getValue(), sizeof(server_ip));
+        snprintf(server_ip, sizeof(server_ip), "%s", custom_server_ip.getValue());
         preferences.putString("server_ip", server_ip);
         snprintf(serverUrl, sizeof(serverUrl), "http://%s:3000/api/log", server_ip);
+      }
+      if (strlen(custom_device_key.getValue()) >= 16) {
+        snprintf(deviceKey, sizeof(deviceKey), "%s", custom_device_key.getValue());
+        preferences.putString("device_key", deviceKey);
       }
       preferences.end();
       Serial.println("\n✅ WiFi Connected Successfully!");  
@@ -268,6 +280,22 @@
     while (SerialPMSOut.available()) SerialPMSOut.read(); // ล้างขยะใน Buffer
     pmsOut.activeMode();
   #endif
+    // Start warm-up after setup, so time spent in the portal cannot consume it.
+    bootTime = millis();
+  #if ESP_IDF_VERSION_MAJOR >= 5
+    esp_task_wdt_config_t config = {};
+    config.timeout_ms = WDT_TIMEOUT * 1000;
+    config.idle_core_mask = 0;
+    config.trigger_panic = true;
+    esp_err_t err = esp_task_wdt_init(&config);
+    if (err == ESP_ERR_INVALID_STATE) err = esp_task_wdt_reconfigure(&config);
+  #else
+    esp_err_t err = esp_task_wdt_init(WDT_TIMEOUT, true);
+  #endif
+    if (err == ESP_OK) {
+      watchdogReady = esp_task_wdt_status(NULL) == ESP_OK || esp_task_wdt_add(NULL) == ESP_OK;
+    }
+    if (!watchdogReady) Serial.println("WARNING: Watchdog setup failed");
   }
 
   // =====================================================================
@@ -275,7 +303,7 @@
   // =====================================================================
   void loop() {
     // ★ เลี้ยง Watchdog Timer ทุกรอบ loop (ป้องกัน ESP32 รีสตาร์ทถ้าโค้ดทำงานปกติ)
-    esp_task_wdt_reset();
+    if (watchdogReady) esp_task_wdt_reset();
 
     // =================================================================
     // ส่วนที่ 1: อ่านค่าเซนเซอร์ฝุ่น (Non-blocking Active Stream)
@@ -287,10 +315,8 @@
       lastPmReadTime = millis();
     }
 
-    // ★ ถ้าเซนเซอร์ฝุ่นในบ้านหลุดเกิน 5 วินาที → reset เป็น 0 ป้องกันค่าค้างเก่า
-    if (lastPmReadTime > 0 && millis() - lastPmReadTime > PM_TIMEOUT) {
-      currentPmValue = 0;
-    }
+    // Keep the last measurement separate from whether it is still usable.
+    pmValid = lastPmReadTime > 0 && millis() - lastPmReadTime <= PM_TIMEOUT;
 
     // รับข้อมูลฝุ่นนอกบ้าน
   #if HAS_OUTDOOR_SENSORS
@@ -300,10 +326,7 @@
       lastPmOutReadTime = millis();
     }
 
-    // ★ ถ้าเซนเซอร์ฝุ่นนอกบ้านหลุดเกิน 5 วินาที → reset เป็น 0
-    if (lastPmOutReadTime > 0 && millis() - lastPmOutReadTime > PM_TIMEOUT) {
-      currentPmOutValue = 0;
-    }
+    pmOutValid = lastPmOutReadTime > 0 && millis() - lastPmOutReadTime <= PM_TIMEOUT;
   #endif
 
     // =================================================================
@@ -322,9 +345,23 @@
             lastFanSwitch = millis();
           }
         } 
+        else if (!pmValid) {
+          // Unknown indoor PM: close intake and run the installed filter.
+          if (isVentOn || !isFiltOn) {
+            setVentFan(false);
+            setFiltFan(true);
+            lastFanSwitch = millis();
+          }
+        }
+        else if (!pmOutValid && isVentOn) {
+          // Even within the hysteresis band, do not keep using an unknown intake.
+          setVentFan(false);
+          setFiltFan(true);
+          lastFanSwitch = millis();
+        }
         else if (currentPmValue > 35) {
           // Priority 2: โหมดสู้ฝุ่น
-          if (currentPmOutValue < currentPmValue) {
+          if (pmOutValid && currentPmOutValue < currentPmValue) {
             // อากาศนอกบ้านดีกว่า -> เปิดระบายอากาศ (ดึงอากาศดีเข้า)
             if (!isVentOn || isFiltOn) {
               setVentFan(true);
@@ -352,7 +389,9 @@
       } 
       else {
         // ⬇️⬇️⬇️⬇️⬇️ [โหมดปัจจุบัน] ทำงานเมื่อยังไม่มีเซนเซอร์นอกบ้าน ⬇️⬇️⬇️⬇️⬇️
-        if (currentPmValue > 35) {
+        if (!pmValid) {
+          // Single fan: retain its last state; do not interpret missing PM as clean.
+        } else if (currentPmValue > 35) {
           if (!isVentOn) {
             setVentFan(true);   // เปิดพัดลมระบายอากาศ
             lastFanSwitch = millis();
@@ -376,7 +415,9 @@
 
       // อ่าน AHT10
       sensors_event_t h_ev, t_ev;  
-      if (ahtOnline && aht.getEvent(&h_ev, &t_ev)) {
+      ahtValid = ahtOnline && aht.getEvent(&h_ev, &t_ev) &&
+          isfinite(t_ev.temperature) && isfinite(h_ev.relative_humidity);
+      if (ahtValid) {
         lastTemp = t_ev.temperature;       
         lastHum = h_ev.relative_humidity;
         i2cErrorCount = 0;  // ★ อ่านสำเร็จ reset ตัวนับ error
@@ -392,17 +433,17 @@
       // อ่าน ENS160
       if (ensOnline) {
         // ★ ส่งค่าอุณหภูมิ/ความชื้นจาก AHT10 ให้ ENS160 ชดเชย (ช่วยให้ค่า CO2 แม่นขึ้นมาก!)
-        if (ahtOnline) {
+        if (ahtValid) {
           ens160.setTempCompensationCelsius(lastTemp);
           ens160.setRHCompensationFloat(lastHum);
         }
 
-        uint16_t eco2 = ens160.getECO2();
-        if (eco2 >= 400) {
-          lastCo2 = eco2;
-        } else if (ens160.checkDataStatus()) {
-          uint16_t eco2_retry = ens160.getECO2();
-          if (eco2_retry >= 400) lastCo2 = eco2_retry;
+        if (ens160.checkDataStatus()) {
+          uint16_t eco2 = ens160.getECO2();
+          if (eco2 >= 400) {
+            lastCo2 = eco2;
+            lastCo2ReadTime = millis();
+          }
         }
         ens160.getTVOC();
         ens160.getAQI();
@@ -427,35 +468,51 @@
       lastPost = millis();
 
       if (WiFi.status() == WL_CONNECTED) {
+        wifiLostSince = 0; // WiFi state is independent of HTTP success.
+        if (strlen(deviceKey) < 16) {
+          Serial.println("Configure a Device API key via AirWatch-Setup, then reboot");
+          return;
+        }
+        char inPmText[16], outPmText[16], co2Text[16], tempText[24], humText[24], outGasText[16];
+        snprintf(inPmText, sizeof(inPmText), pmValid ? "%d" : "null", currentPmValue);
+        snprintf(outPmText, sizeof(outPmText), pmOutValid ? "%d" : "null", currentPmOutValue);
+        bool co2Valid = lastCo2ReadTime > 0 && millis() - lastCo2ReadTime <= PM_TIMEOUT;
+        snprintf(co2Text, sizeof(co2Text), co2Valid ? "%d" : "null", lastCo2);
+        snprintf(tempText, sizeof(tempText), ahtValid ? "%.2f" : "null", lastTemp);
+        snprintf(humText, sizeof(humText), ahtValid ? "%.2f" : "null", lastHum);
+        snprintf(outGasText, sizeof(outGasText), HAS_OUTDOOR_SENSORS ? "%d" : "null", lastGasOut);
         char jsonBuffer[256];
-        // ส่งข้อมูลเซนเซอร์ในบ้าน นอกบ้าน และสถานะพัดลมทั้ง 2 ตัวครบถ้วน
-        snprintf(jsonBuffer, sizeof(jsonBuffer),
-          "{\"in_pm\":%d,\"in_co2\":%d,\"in_gas\":%d,\"out_pm\":%d,\"out_gas\":%d,\"vent\":%d,\"filt\":%d,\"temp\":%.2f,\"humidity\":%.2f}",
-          currentPmValue, lastCo2, lastGas, 
-          currentPmOutValue, lastGasOut,
-          (isVentOn ? 1 : 0),
-          (isFiltOn ? 1 : 0),
-          lastTemp, lastHum
-        );
-
+        int length = snprintf(jsonBuffer, sizeof(jsonBuffer),
+          "{\"in_pm\":%s,\"in_co2\":%s,\"in_gas\":%d,\"out_pm\":%s,\"out_gas\":%s,\"vent\":%d,\"filt\":%d,\"temp\":%s,\"humidity\":%s}",
+          inPmText, co2Text, lastGas, outPmText, outGasText,
+          isVentOn ? 1 : 0, isFiltOn ? 1 : 0, tempText, humText);
+        if (length < 0 || length >= (int)sizeof(jsonBuffer)) {
+          Serial.println("Telemetry serialization failed");
+          return;
+        }
         HTTPClient http;
-        http.begin(serverUrl);                           
-        http.addHeader("Content-Type", "application/json"); 
-        http.setTimeout(HTTP_TIMEOUT);                   
-        int httpCode = http.POST(jsonBuffer);            
-        
-        if (httpCode > 0) {
-          Serial.printf("📡 Sent: %s\n", jsonBuffer);   
+        http.begin(serverUrl);
+        http.addHeader("Content-Type", "application/json");
+        http.addHeader("X-Device-Key", deviceKey);
+        http.setConnectTimeout(HTTP_TIMEOUT);
+        http.setTimeout(HTTP_TIMEOUT);
+        int httpCode = http.POST(jsonBuffer);
+        http.end();
+        if (httpCode >= 200 && httpCode < 300) {
+          httpFailures = 0;
+          Serial.println("Telemetry saved");
         } else {
-          Serial.printf("❌ Error: %s (Target: %s)\n", http.errorToString(httpCode).c_str(), serverUrl); 
-          // หากส่งไม่ผ่าน และผ่านไปเกิน 5 วินาที ให้ยิงเรดาร์ค้นหา IP ใหม่ของเซิร์ฟเวอร์ทันที
-          if (!serverDiscovered && millis() - lastDiscoveryAttempt > 5000) {  // ★ ค้นหาใหม่เฉพาะเมื่อยังไม่เคยเจอ server
+          if (httpFailures < 3) httpFailures++;
+          Serial.printf("Telemetry failed: HTTP %d\n", httpCode);
+          if (httpCode == 401) Serial.println("Device API key does not match server configuration");
+          // Back off discovery; do not repeatedly discover on payload/auth errors.
+          if (httpFailures >= 3 && (httpCode < 0 || httpCode >= 500) &&
+              millis() - lastDiscoveryAttempt >= 30000) {
+            serverDiscovered = false;
             lastDiscoveryAttempt = millis();
             discoverServerIP();
           }
         }
-        http.end();
-        wifiLostSince = 0;  // ★ ส่งข้อมูลสำเร็จ = WiFi ยังดี reset ตัวนับ
       } else {
         // หาก WiFi หลุด ให้พยายามต่อใหม่ทุก 10 วินาทีแบบ Non-blocking
         if (wifiLostSince == 0) wifiLostSince = millis();  // ★ จดเวลาที่ WiFi เริ่มหลุด
