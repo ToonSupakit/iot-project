@@ -105,8 +105,8 @@ tr:hover {
                     <th>Date</th>
                     <th class="text-right">Indoor PM2.5</th>
                     <th class="text-right">Outdoor PM2.5</th>
-                    <th class="text-right">Indoor CO2 (ppm)</th>
-                    <th class="text-right">Indoor Gas</th>
+                    <th class="text-right">Indoor eCO₂ (ppm)</th>
+                    <th class="text-right">Indoor Gas (ADC)</th>
                 </tr>
             </thead>
             <tbody id="history-tbody">
@@ -139,8 +139,10 @@ setInterval(updateClock, 1000);
 
 async function loadHistory() {
     try {
-        const res = await fetch('http://localhost:3000/api/history/daily');
+        const res = await fetch('/api/history/daily');
+        if (!res.ok) throw new Error('History HTTP ' + res.status);
         const data = await res.json();
+        if (!Array.isArray(data)) throw new Error('Invalid history response');
         
         if (!data || data.length === 0) {
             document.getElementById('history-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--muted);">No data available yet</td></tr>';
@@ -151,23 +153,23 @@ async function loadHistory() {
         const tbody = document.getElementById('history-tbody');
         tbody.innerHTML = '';
         data.forEach(row => {
-            const dateObj = new Date(row.date);
+            const dateObj = new Date(row.date + 'T00:00:00');
             const dateStr = dateObj.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
             
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td style="font-family: var(--mono);">${dateStr}</td>
-                <td class="text-right" style="color: ${row.avg_in_pm > 35 ? 'var(--red)' : 'var(--green)'}; font-family: var(--mono); font-weight: 500;">${row.avg_in_pm || 0}</td>
-                <td class="text-right" style="font-family: var(--mono);">${row.avg_out_pm || 0}</td>
-                <td class="text-right" style="font-family: var(--mono);">${row.avg_in_co2 || 0}</td>
-                <td class="text-right" style="font-family: var(--mono);">${row.avg_in_gas || 0}</td>
+                <td class="text-right" style="color: ${row.avg_in_pm > 35 ? 'var(--red)' : 'var(--green)'}; font-family: var(--mono); font-weight: 500;">${row.avg_in_pm ?? '—'}</td>
+                <td class="text-right" style="font-family: var(--mono);">${row.avg_out_pm ?? '—'}</td>
+                <td class="text-right" style="font-family: var(--mono);">${row.avg_in_co2 ?? '—'}</td>
+                <td class="text-right" style="font-family: var(--mono);">${row.avg_in_gas ?? '—'}</td>
             `;
             tbody.appendChild(tr);
         });
 
         // --- Render Chart ---
         const labels = data.map(d => {
-            const dateObj = new Date(d.date);
+            const dateObj = new Date(d.date + 'T00:00:00');
             return dateObj.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' });
         }).reverse(); // Reverse for chart (oldest first)
         
