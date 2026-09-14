@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirWatch - Login / Register</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
+
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface2: #1c2330;
+            --border: rgba(255, 255, 255, 0.07);
+            --border2: rgba(255, 255, 255, 0.13);
+            --text: #e6edf3;
+            --muted: #7d8590;
+            --green: #3fb950;
+            --green-dim: rgba(63, 185, 80, 0.12);
+            --blue: #58a6ff;
+            --blue-dim: rgba(88, 166, 255, 0.12);
+            --amber: #d29922;
+            --amber-dim: rgba(210, 153, 34, 0.15);
+            --red: #f85149;
+            --red-dim: rgba(248, 81, 73, 0.15);
+            --purple: #a371f7;
+            --mono: 'IBM Plex Mono', monospace;
+            --sans: 'IBM Plex Sans Thai', sans-serif;
+            
+            --glass-bg: rgba(22, 27, 34, 0.7);
+            --input-bg: rgba(255, 255, 255, 0.03);
+        }
+
+        [data-theme="light"] {
+            --bg: #f6f8fa;
+            --surface: #ffffff;
+            --surface2: #eaeef2;
+            --border: rgba(0, 0, 0, 0.1);
+            --border2: rgba(0, 0, 0, 0.15);
+            --text: #1F2328;
+            --muted: #656d76;
+            --green: #1a7f37;
+            --green-dim: rgba(26, 127, 55, 0.12);
+            --blue: #0969da;
+            --blue-dim: rgba(9, 105, 218, 0.12);
+            --amber: #9a6700;
+            --amber-dim: rgba(154, 103, 0, 0.15);
+            --red: #d1242f;
+            --red-dim: rgba(209, 36, 47, 0.15);
+            --purple: #8250df;
+
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --input-bg: rgba(0, 0, 0, 0.02);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--sans);
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        /* Animated Background */
+        .bg-shapes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: 0;
+        }
+
+        .shape {
+            position: absolute;
+            filter: blur(80px);
+            opacity: 0.5;
+            border-radius: 50%;
+            animation: float 20s infinite ease-in-out alternate;
+        }
+
+        .shape-1 {
+            width: 400px;
+            height: 400px;
+            background: var(--blue-dim);
+            top: -100px;
+            left: -100px;
+            animation-delay: 0s;
+        }
+
+        .shape-2 {
+            width: 500px;
+            height: 500px;
+            background: var(--green-dim);
+            bottom: -200px;
+            right: -100px;
+            animation-delay: -5s;
+        }
+
+        .shape-3 {
+            width: 300px;
+            height: 300px;
+            background: var(--purple);
+            opacity: 0.1;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+            0% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(50px, 30px) scale(1.1); }
+            100% { transform: translate(-30px, 50px) scale(0.9); }
+        }
+
+        /* Container & Card */
+        .auth-container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 420px;
+            padding: 2rem;
+            perspective: 1000px;
+        }
+
+        .auth-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .brand {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .brand-logo {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--green), var(--blue));
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 12px var(--green-dim);
+        }
+        
+        .brand-logo svg {
+            width: 24px;
+            height: 24px;
+            fill: #fff;
+        }
+
+        .brand h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+        }
+
+        .brand p {
+            color: var(--muted);
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        /* Forms */
+        .form-wrapper {
+            position: relative;
+            min-height: 280px;
+            transition: height 0.3s ease;
+        }
+
+        .form {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(20px);
+        }
+
+        .form.active {
+            opacity: 1;
+            pointer-events: all;
+            transform: translateX(0);
+            position: relative;
+        }
+
+        .form.slide-left {
+            transform: translateX(-20px);
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: var(--sans);
+            font-size: 0.9375rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px var(--blue-dim);
+            background: var(--surface);
+        }
+
+        .form-control::placeholder {
+            color: var(--muted);
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--green);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: var(--sans);
+            display: flex;
+            align-content: center;
+            justify-content: center;
+        }
+
+        .btn-submit:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-submit:active {
+            transform: translateY(0);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .form-footer {
+            margin-top: 1.5rem;
+            text-align: center;
+            font-size: 0.875rem;
+            color: var(--muted);
+        }
+
+        .form-footer a {
+            color: var(--blue);
+            text-decoration: none;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .form-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .error-message {
+            color: var(--red);
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--red-dim);
+            border: 1px solid rgba(248, 81, 73, 0.2);
+            border-radius: 8px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+
+        .btn-submit.loading .btn-text { display: none; }
+        .btn-submit.loading .loader { display: block; }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Theme Toggle Button (Optional, for manual testing) */
+        .theme-toggle {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .theme-toggle:hover {
+            background: var(--surface2);
+        }
+        
+        .theme-toggle svg { width: 16px; height: 16px; fill: currentColor; }
+    </style>
+</head>
+<body>
+
+    <!-- Background Shapes -->
+    <div class="bg-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+    </div>
+
+    <!-- Theme Toggle -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle Theme">
+        <svg id="moonIcon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        <svg id="sunIcon" style="display: none;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+    </button>
+
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                    </svg>
+                </div>
+                <h1>AirWatch</h1>
+                <p>Air Quality Monitoring System</p>
+            </div>
+
+            <div class="form-wrapper">
+                <!-- Login Form -->
+                <form id="loginForm" class="form active">
+                    <div id="loginError" class="error-message"></div>
+                    
+                    <div class="form-group">
+                        <label for="loginEmail">Email address</label>
+                        <input type="email" id="loginEmail" class="form-control" placeholder="name@example.com" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
+                    </div>
+                    
+                    <button type="submit" class="btn-submit" id="loginBtn">
+                        <span class="btn-text">Sign In</span>
+                        <div class="loader"></div>
+                    </button>
+                    
+                    <div class="form-footer">
+                        Don't have an account? <a id="showRegister">Create one</a>
+                    </div>
+                </form>
+
+                <!-- Register Form -->
+                <form id="registerForm" class="form">
+                    <div id="registerError" class="error-message"></div>
+                    
+                    <div class="form-group">
+                        <label for="regUsername">Username</label>
+                        <input type="text" id="regUsername" class="form-control" placeholder="johndoe" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regEmail">Email address</label>
+                        <input type="email" id="regEmail" class="form-control" placeholder="name@example.com" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="regPassword">Password</label>
+                        <input type="password" id="regPassword" class="form-control" placeholder="••••••••" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regConfirmPassword">Confirm Password</label>
+                        <input type="password" id="regConfirmPassword" class="form-control" placeholder="••••••••" required>
+                    </div>
+                    
+                    <button type="submit" class="btn-submit" id="registerBtn">
+                        <span class="btn-text">Sign Up</span>
+                        <div class="loader"></div>
+                    </button>
+                    
+                    <div class="form-footer">
+                        Already have an account? <a id="showLogin">Sign in</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Theme initialization
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        
+        const themeToggle = document.getElementById('themeToggle');
+        const sunIcon = document.getElementById('sunIcon');
+        const moonIcon = document.getElementById('moonIcon');
+
+        function updateThemeIcon(theme) {
+            if (theme === 'light') {
+                sunIcon.style.display = 'block';
+                moonIcon.style.display = 'none';
+            } else {
+                sunIcon.style.display = 'none';
+                moonIcon.style.display = 'block';
+            }
+        }
+        updateThemeIcon(savedTheme);
+
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        });
+
+        // Form toggle logic
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+        const showRegisterBtn = document.getElementById('showRegister');
+        const showLoginBtn = document.getElementById('showLogin');
+        const formWrapper = document.querySelector('.form-wrapper');
+
+        function updateWrapperHeight() {
+            const activeForm = document.querySelector('.form.active');
+            if(activeForm) {
+                formWrapper.style.height = `${activeForm.offsetHeight}px`;
+            }
+        }
+
+        showRegisterBtn.addEventListener('click', () => {
+            loginForm.classList.remove('active');
+            loginForm.classList.add('slide-left');
+            
+            registerForm.classList.remove('slide-left');
+            registerForm.classList.add('active');
+            
+            setTimeout(updateWrapperHeight, 50);
+        });
+
+        showLoginBtn.addEventListener('click', () => {
+            registerForm.classList.remove('active');
+            registerForm.classList.add('slide-left');
+            
+            loginForm.classList.remove('slide-left');
+            loginForm.classList.add('active');
+            
+            setTimeout(updateWrapperHeight, 50);
+        });
+
+        window.addEventListener('resize', updateWrapperHeight);
+        // Initial height set
+        setTimeout(updateWrapperHeight, 100);
+
+
+        // API interactions
+        const loginError = document.getElementById('loginError');
+        const registerError = document.getElementById('registerError');
+
+        function showError(element, message) {
+            element.textContent = message;
+            element.classList.add('show');
+        }
+
+        function hideError(element) {
+            element.classList.remove('show');
+            element.textContent = '';
+        }
+
+        function setLoading(btn, isLoading) {
+            if (isLoading) {
+                btn.classList.add('loading');
+                btn.disabled = true;
+            } else {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        // Login Submit
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError(loginError);
+            
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const btn = document.getElementById('loginBtn');
+            
+            setLoading(btn, true);
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    localStorage.setItem('airwatch_token', data.token);
+                    window.location.href = '/';
+                } else {
+                    showError(loginError, data.message || 'Login failed. Please check your credentials.');
+                }
+            } catch (err) {
+                showError(loginError, 'Network error. Please try again later.');
+            } finally {
+                setLoading(btn, false);
+            }
+        });
+
+        // Register Submit
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError(registerError);
+            
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const confirmPassword = document.getElementById('regConfirmPassword').value;
+            const btn = document.getElementById('registerBtn');
+
+            if (password !== confirmPassword) {
+                showError(registerError, "Passwords do not match.");
+                return;
+            }
+            
+            setLoading(btn, true);
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password })
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    // Assuming API returns token on registration as well, or you might want to redirect to login
+                    if(data.token) {
+                        localStorage.setItem('airwatch_token', data.token);
+                        window.location.href = '/';
+                    } else {
+                        // Switch to login if no token returned
+                        showLoginBtn.click();
+                        document.getElementById('loginEmail').value = email;
+                    }
+                } else {
+                    showError(registerError, data.message || 'Registration failed.');
+                }
+            } catch (err) {
+                showError(registerError, 'Network error. Please try again later.');
+            } finally {
+                setLoading(btn, false);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -27,8 +27,27 @@ if (localStorage.getItem('theme') === 'light') {
       </svg>
     </button>
     <a href="history.html" style="color: var(--text); text-decoration: none; font-size: 11px; font-family: var(--mono); background: rgba(255,255,255,0.1); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); transition: background 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">HISTORY</a>
+    <a id="admin-link" href="admin.html" style="display:none; color: var(--purple); text-decoration: none; font-size: 11px; font-family: var(--mono); background: rgba(163,113,247,0.1); padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(163,113,247,0.25); transition: background 0.3s;" onmouseover="this.style.background='rgba(163,113,247,0.2)'" onmouseout="this.style.background='rgba(163,113,247,0.1)'">ADMIN</a>
+    <button id="claim-btn" onclick="showClaimModal()" style="display:none; background:var(--green-dim); border:1px solid rgba(63,185,80,0.25); color:var(--green); cursor:pointer; font-size:11px; font-family:var(--mono); padding:5px 12px; border-radius:6px; transition: background 0.3s;" onmouseover="this.style.background='rgba(63,185,80,0.2)'" onmouseout="this.style.background='var(--green-dim)'">+ CLAIM DEVICE</button>
+    <span id="user-display" style="font-family:var(--mono);font-size:11px;color:var(--muted);display:none;"></span>
+    <a id="login-link" href="login.html" style="color: var(--blue); text-decoration: none; font-size: 11px; font-family: var(--mono); background: var(--blue-dim); padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(88,166,255,0.25);">LOGIN</a>
+    <button id="logout-btn" onclick="logout()" style="display:none; background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; font-size:11px; font-family:var(--mono); padding:5px 12px; border-radius:6px;">LOGOUT</button>
     <span id="time-display" style="font-family:var(--mono);font-size:12px;color:var(--muted);"></span>
     <div class="live-pill" style="color:var(--amber);background:var(--amber-dim);border-color:rgba(154,103,0,0.25);">CONNECTING...</div>
+  </div>
+</div>
+
+<!-- Claim Device Modal -->
+<div id="claim-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:100; display:none; align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:2rem; width:90%; max-width:400px; box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+    <h3 style="font-family:var(--mono); font-size:14px; color:var(--text); margin-bottom:1rem;">🔗 Claim Device</h3>
+    <input id="claim-key" type="text" placeholder="Device API Key" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border2); background:var(--surface2); color:var(--text); font-family:var(--mono); font-size:13px; margin-bottom:10px; box-sizing:border-box;">
+    <input id="claim-name" type="text" placeholder="Device Name (optional)" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border2); background:var(--surface2); color:var(--text); font-family:var(--mono); font-size:13px; margin-bottom:10px; box-sizing:border-box;">
+    <div id="claim-error" style="color:var(--red); font-size:12px; margin-bottom:10px; display:none;"></div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button onclick="hideClaimModal()" style="background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; padding:8px 16px; border-radius:8px; font-size:12px;">Cancel</button>
+      <button onclick="claimDevice()" style="background:var(--green); border:none; color:#fff; cursor:pointer; padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600;">Claim</button>
+    </div>
   </div>
 </div>
 
@@ -575,6 +594,66 @@ async function fetchInitialData() {
   }
 }
 fetchInitialData(); // เรียกทำงานทันทีเมื่อหน้าเว็บโหลดเสร็จ
+
+// =====================================================================
+// User Authentication & Device Claim
+// =====================================================================
+function getToken() { return localStorage.getItem('airwatch_token'); }
+function authHeaders() { return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' }; }
+
+async function checkAuth() {
+  const token = getToken();
+  if (!token) return;
+  try {
+    const res = await fetch('/api/auth/me', { headers: authHeaders() });
+    if (!res.ok) return;
+    const user = await res.json();
+    document.getElementById('user-display').textContent = '👤 ' + user.username;
+    document.getElementById('user-display').style.display = 'inline';
+    document.getElementById('login-link').style.display = 'none';
+    document.getElementById('logout-btn').style.display = 'inline-block';
+    document.getElementById('claim-btn').style.display = 'inline-block';
+    if (user.role === 'admin') {
+      document.getElementById('admin-link').style.display = 'inline-block';
+    }
+  } catch {}
+}
+checkAuth();
+
+function showClaimModal() {
+  const modal = document.getElementById('claim-modal');
+  modal.style.display = 'flex';
+  document.getElementById('claim-error').style.display = 'none';
+  document.getElementById('claim-key').value = '';
+  document.getElementById('claim-name').value = '';
+}
+function hideClaimModal() { document.getElementById('claim-modal').style.display = 'none'; }
+
+async function claimDevice() {
+  const key = document.getElementById('claim-key').value.trim();
+  const name = document.getElementById('claim-name').value.trim();
+  const errEl = document.getElementById('claim-error');
+  if (key.length < 16) {
+    errEl.textContent = 'Device key must be at least 16 characters';
+    errEl.style.display = 'block';
+    return;
+  }
+  try {
+    const res = await fetch('/api/devices/claim', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ device_key: key, device_name: name || undefined })
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+    hideClaimModal();
+    alert('✅ ' + data.message);
+  } catch { errEl.textContent = 'Network error'; errEl.style.display = 'block'; }
+}
+
+function logout() {
+  localStorage.removeItem('airwatch_token');
+  location.reload();
+}
 </script>
 </body>
 </html>
