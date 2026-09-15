@@ -1,677 +1,217 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="th">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Smart Air Quality Monitor</title>
-<!-- <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css "> -->
-<link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
-<script src="/socket.io/socket.io.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-if (localStorage.getItem('theme') === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-}
-</script>
-</head>
-<body>
-
-<div class="topbar">
-  <div class="logo"><strong>AirWatch</strong> · smart monitor</div>
-  <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;justify-content:flex-end;">
-    <button onclick="toggleTheme()" class="theme-toggle" style="background:none; border:none; color:var(--text); cursor:pointer; display:flex; align-items:center; justify-content:center; padding: 4px;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
-        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-      </svg>
-    </button>
-    <a href="history.html" style="color: var(--text); text-decoration: none; font-size: 11px; font-family: var(--mono); background: rgba(255,255,255,0.1); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); transition: background 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">HISTORY</a>
-    <a id="admin-link" href="admin.html" style="display:none; color: var(--purple); text-decoration: none; font-size: 11px; font-family: var(--mono); background: rgba(163,113,247,0.1); padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(163,113,247,0.25); transition: background 0.3s;" onmouseover="this.style.background='rgba(163,113,247,0.2)'" onmouseout="this.style.background='rgba(163,113,247,0.1)'">ADMIN</a>
-    <button id="claim-btn" onclick="showClaimModal()" style="display:none; background:var(--green-dim); border:1px solid rgba(63,185,80,0.25); color:var(--green); cursor:pointer; font-size:11px; font-family:var(--mono); padding:5px 12px; border-radius:6px; transition: background 0.3s;" onmouseover="this.style.background='rgba(63,185,80,0.2)'" onmouseout="this.style.background='var(--green-dim)'">+ CLAIM DEVICE</button>
-    <span id="user-display" style="font-family:var(--mono);font-size:11px;color:var(--muted);display:none;"></span>
-    <a id="login-link" href="login.html" style="color: var(--blue); text-decoration: none; font-size: 11px; font-family: var(--mono); background: var(--blue-dim); padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(88,166,255,0.25);">LOGIN</a>
-    <button id="logout-btn" onclick="logout()" style="display:none; background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; font-size:11px; font-family:var(--mono); padding:5px 12px; border-radius:6px;">LOGOUT</button>
-    <span id="time-display" style="font-family:var(--mono);font-size:12px;color:var(--muted);"></span>
-    <div class="live-pill" style="color:var(--amber);background:var(--amber-dim);border-color:rgba(154,103,0,0.25);">CONNECTING...</div>
-  </div>
-</div>
-
-<!-- Claim Device Modal -->
-<div id="claim-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:100; align-items:center; justify-content:center;">
-  <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:2rem; width:90%; max-width:400px; box-shadow:0 20px 60px rgba(0,0,0,0.4);">
-    <h3 style="font-family:var(--mono); font-size:14px; color:var(--text); margin-bottom:1rem;">🔗 Claim Device</h3>
-    <input id="claim-key" type="text" placeholder="Device API Key" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border2); background:var(--surface2); color:var(--text); font-family:var(--mono); font-size:13px; margin-bottom:10px; box-sizing:border-box;">
-    <input id="claim-name" type="text" placeholder="Device Name (optional)" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border2); background:var(--surface2); color:var(--text); font-family:var(--mono); font-size:13px; margin-bottom:10px; box-sizing:border-box;">
-    <div id="claim-error" style="color:var(--red); font-size:12px; margin-bottom:10px; display:none;"></div>
-    <div style="display:flex; gap:10px; justify-content:flex-end;">
-      <button onclick="hideClaimModal()" style="background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; padding:8px 16px; border-radius:8px; font-size:12px;">Cancel</button>
-      <button onclick="claimDevice()" style="background:var(--green); border:none; color:#fff; cursor:pointer; padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600;">Claim</button>
-    </div>
-  </div>
-</div>
-
-<!-- Logout Modal -->
-<div id="logout-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:100; align-items:center; justify-content:center;">
-  <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:2rem; width:90%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,0.4); text-align:center;">
-    <div style="width:48px; height:48px; border-radius:50%; background:var(--red-dim); color:var(--red); display:inline-flex; align-items:center; justify-content:center; margin-bottom:1rem;">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-    </div>
-    <h3 style="font-family:var(--sans); font-size:16px; font-weight:600; color:var(--text); margin-bottom:0.5rem;">ยืนยันการออกจากระบบ</h3>
-    <p style="font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:1.5rem;">คุณต้องการออกจากระบบ AirWatch ใช่หรือไม่?</p>
-    <div style="display:flex; gap:10px; justify-content:center;">
-      <button onclick="hideLogoutModal()" style="flex:1; background:var(--surface2); border:1px solid var(--border); color:var(--text); cursor:pointer; padding:10px; border-radius:8px; font-size:13px; font-weight:500;">ยกเลิก</button>
-      <button onclick="confirmLogout()" style="flex:1; background:var(--red); border:none; color:#fff; cursor:pointer; padding:10px; border-radius:8px; font-size:13px; font-weight:600;">ออกจากระบบ</button>
-    </div>
-  </div>
-</div>
-
-<div class="container">
-
-    <div class="alert-banner" id="alert-banner">
-    <div class="alert-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#f85149" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-    </div>
-    <div class="alert-text">
-      <div class="alert-title" id="alert-title">ค่าฝุ่นเกินเกณฑ์</div>
-      <div class="alert-sub" id="alert-sub">PM2.5 ในบ้านสูงเกินกำหนด กรุณาเปิดพัดลมกรองอากาศ</div>
-    </div>
-    <button class="alert-close" onclick="dismissAlert()">✕</button>
-  </div>
-
-    <div class="notif-log" id="notif-log">
-    <div class="notif-log-head">
-      <span class="notif-log-title">ALERT LOG</span>
-      <button class="notif-clear" onclick="clearLog()">clear all</button>
-    </div>
-    <div class="notif-items" id="notif-items"></div>
-  </div>
-
-
-    <div class="pm-grid">
-    <div class="pm-card" id="card-in" style="--accent-color:var(--green);">
-      <div class="pm-label">INDOOR · ในบ้าน</div>
-      <div class="pm-num" id="in_pm25">-</div>
-      <div class="pm-unit">µg/m³ · PM2.5</div>
-      <div class="pm-bar-track"><div class="pm-bar-fill" id="bar-in" style="width:0%;background:var(--green);"></div></div>
-      <div class="pm-meta">
-        <div class="pm-meta-item">eCO₂ <span id="in_co2">-</span> ppm</div>
-        <div class="pm-meta-item">Gas <span id="in_gas">-</span></div>
-      </div>
-    </div>
-    <div class="pm-card" id="card-out" style="--accent-color:var(--blue);">
-      <div class="pm-label">OUTDOOR · นอกบ้าน</div>
-      <div class="pm-num" id="out_pm25">-</div>
-      <div class="pm-unit">µg/m³ · PM2.5</div>
-      <div class="pm-bar-track"><div class="pm-bar-fill" id="bar-out" style="width:0%;background:var(--amber);"></div></div>
-      <div class="pm-meta">
-        <div class="pm-meta-item">Gas <span id="out_gas">-</span></div>
-    </div>
-  </div>
-</div>
-
-  <div class="bottom-layout">
-    <div class="bottom-left">
-      <div class="mini-grid">
-        <div class="mini-card">
-          <div class="mini-label">AQI</div>
-          <div class="mini-val" id="aqi-val">-</div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>ภาพรวม · AirWatch</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/js/theme.js"></script>
+    <script defer src="/socket.io/socket.io.js"></script>
+    <script defer src="/vendor/chart.umd.js"></script>
+    <script defer src="/js/model.js"></script>
+    <script defer src="/js/common.js"></script>
+    <script defer src="/js/dashboard.js"></script>
+  </head>
+  <body data-page="dashboard">
+    <a class="sr-only" href="#main">ข้ามไปเนื้อหา</a>
+    <aside class="sidebar" id="sidebar" aria-label="เมนูหลัก"></aside>
+    <main class="main" id="main">
+      <header class="topline">
+        <span class="breadcrumb">WORKSPACE / DASHBOARD</span>
+        <div class="top-actions">
+          <span class="user-short muted" id="top-user"></span
+          ><button
+            class="button icon-button"
+            data-theme-toggle
+            aria-label="สลับโหมดสี"
+          >
+            <span data-icon="sun"></span></button
+          ><button class="button quiet small" data-logout>ออกจากระบบ</button>
         </div>
-        <div class="mini-card">
-          <div class="mini-label">HUMIDITY</div>
-          <div class="mini-val" id="humidity-val">--%</div>
+      </header>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">AIRWATCH · DASHBOARD</p>
+          <h1>ภาพรวมคุณภาพอากาศ</h1>
+          <p>ติดตามอากาศในพื้นที่ของคุณ พร้อมสถานะอุปกรณ์แบบเรียลไทม์</p>
         </div>
-        <div class="mini-card">
-          <div class="mini-label">TEMP</div>
-          <div class="mini-val" id="temp-val">--°C</div>
+        <div class="actions">
+          <button class="button primary" data-add-device>
+            <span data-icon="plus"></span>เพิ่มอุปกรณ์
+          </button>
         </div>
-        <div class="mini-card">
-          <div class="mini-label">ALERTS TODAY</div>
-          <div class="mini-val" id="alert-count">0</div>
+      </section>
+      <div id="page-error" role="alert" class="banner error" hidden></div>
+      <section class="toolbar" aria-label="เลือกอุปกรณ์">
+        <div class="device-field">
+          <label for="device-select">พื้นที่ / อุปกรณ์</label
+          ><select id="device-select" disabled>
+            <option>กำลังโหลดอุปกรณ์…</option>
+          </select>
         </div>
-      </div>
-
-      <div class="fans-label"></div>
-      <div class="fan-grid">
-        <div class="fan-card" id="fc-filt" style="--fan-color:var(--green);--fan-bg:var(--green-dim);">
-          <div class="fan-top">
-            <div class="fan-icon-wrap" id="fi-filt">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-linecap="round">
-                <path d="M3 6h18M7 12h10M11 18h2"/>
-              </svg>
+        <div class="actions">
+          <button id="device-key" class="button quiet small" disabled>
+            <span data-icon="key"></span>รหัสอุปกรณ์</button
+          ><button id="refresh" class="button small">
+            <span data-icon="refresh"></span>รีเฟรช
+          </button>
+        </div>
+      </section>
+      <section class="empty" id="no-devices" hidden>
+        <span data-icon="device"></span>
+        <h2>เพิ่มอุปกรณ์แรกของคุณ</h2>
+        <p>
+          ตั้งชื่อพื้นที่ รับรหัสอุปกรณ์ แล้วนำไปกรอกใน AirWatch-Setup บนบอร์ด
+        </p>
+        <button class="button primary" data-add-device>เพิ่มอุปกรณ์</button>
+      </section>
+      <div id="device-content" hidden>
+        <div
+          class="banner warning"
+          id="pollution-banner"
+          role="status"
+          hidden
+        ></div>
+        <div class="air-grid">
+          <article class="panel air-card primary-card">
+            <div class="air-head">
+              <div>
+                <p class="eyebrow">INDOOR AIR</p>
+                <h2>อากาศภายใน</h2>
+              </div>
+              <span class="badge" id="live-status">รอข้อมูล</span>
             </div>
-            <div class="toggle-wrap">
-              <span class="tog-lbl" id="tl-filt">OFF</span>
-              <label class="toggle" style="--fan-color:var(--green); pointer-events: none;">
-                <input type="checkbox" id="tog-filt" disabled>
-                <span class="tslider"></span>
-              </label>
+            <div class="air-number">
+              <span id="in-pm">—</span> <small>µg/m³</small>
             </div>
-          </div>
-          <div class="fan-name">Filtration fan</div>
-          <div class="fan-desc">กรองฝุ่น PM2.5 · HEPA filter</div>
-          <div class="fan-badge" id="badge-filt"><span class="badge-dot"></span>Standby</div>
+            <div class="air-foot">
+              <span>PM2.5 · ฝุ่นละอองขนาดเล็ก</span
+              ><span id="pm-status">ยังไม่มีข้อมูล</span>
+            </div>
+          </article>
+          <article class="panel air-card">
+            <div class="air-head">
+              <div>
+                <p class="eyebrow">OUTDOOR AIR</p>
+                <h2>อากาศภายนอก</h2>
+              </div>
+              <span data-icon="wind"></span>
+            </div>
+            <div class="air-number">
+              <span id="out-pm">—</span> <small>µg/m³</small>
+            </div>
+            <div class="air-foot">
+              <span>เปรียบเทียบกับอากาศภายใน</span
+              ><span id="out-status">ยังไม่มีข้อมูล</span>
+            </div>
+          </article>
         </div>
-
-        <div class="fan-card" id="fc-vent" style="--fan-color:var(--blue);--fan-bg:var(--blue-dim);">
-          <div class="fan-top">
-            <div class="fan-icon-wrap" id="fi-vent">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-linecap="round">
-                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-              </svg>
+        <section class="metric-grid" aria-label="ค่าเซนเซอร์เพิ่มเติม">
+          <article class="panel">
+            <div class="metric-label">
+              อุณหภูมิ<span data-icon="temp"></span>
             </div>
-            <div class="toggle-wrap">
-              <span class="tog-lbl" id="tl-vent">OFF</span>
-              <label class="toggle" style="--fan-color:var(--blue); pointer-events: none;">
-                <input type="checkbox" id="tog-vent" disabled>
-                <span class="tslider"></span>
-              </label>
+            <div class="metric-number">
+              <span id="temp">—</span><small>°C</small>
             </div>
-          </div>
-          <div class="fan-name">Ventilation fan</div>
-          <div class="fan-desc">ระบายอากาศ · circulation</div>
-          <div class="fan-badge" id="badge-vent"><span class="badge-dot"></span>Standby</div>
+            <small id="temp-note">รอข้อมูลอุปกรณ์</small>
+          </article>
+          <article class="panel">
+            <div class="metric-label">
+              ความชื้น<span data-icon="drop"></span>
+            </div>
+            <div class="metric-number">
+              <span id="humidity">—</span><small>%</small>
+            </div>
+            <small id="humidity-note">รอข้อมูลอุปกรณ์</small>
+          </article>
+          <article class="panel">
+            <div class="metric-label">
+              คาร์บอนไดออกไซด์ประมาณการ<span data-icon="wind"></span>
+            </div>
+            <div class="metric-number">
+              <span id="co2">—</span><small>eCO₂ ppm</small>
+            </div>
+            <small id="co2-note">รอข้อมูลอุปกรณ์</small>
+          </article>
+          <article class="panel">
+            <div class="metric-label">
+              ระดับก๊าซภายใน<span data-icon="activity"></span>
+            </div>
+            <div class="metric-number">
+              <span id="gas">—</span><small>ADC</small>
+            </div>
+            <small id="gas-note">รอข้อมูลอุปกรณ์</small>
+          </article>
+        </section>
+        <div class="layout-bottom">
+          <section class="panel">
+            <header class="panel-heading">
+              <div>
+                <h2>แนวโน้ม PM2.5</h2>
+                <p>3 ชั่วโมงล่าสุด · เฉลี่ยทุก 10 นาที</p>
+              </div>
+              <div class="legend"><span>ภายใน</span><span>ภายนอก</span></div>
+            </header>
+            <div class="chart-wrap">
+              <canvas
+                id="pm-chart"
+                aria-label="กราฟค่าเฉลี่ย PM2.5"
+                role="img"
+              ></canvas>
+            </div>
+            <p class="chart-caption" id="chart-note">กำลังโหลดประวัติ…</p>
+          </section>
+          <section class="panel">
+            <header class="panel-heading">
+              <div>
+                <h2>การทำงานของระบบ</h2>
+                <p>สถานะที่บอร์ดรายงานล่าสุด</p>
+              </div>
+              <span data-icon="activity"></span>
+            </header>
+            <div class="system-row">
+              <span class="system-label"
+                ><span data-icon="wind"></span>พัดลมระบายอากาศ</span
+              ><span id="vent" class="badge">ไม่ทราบ</span>
+            </div>
+            <div class="system-row">
+              <span class="system-label"
+                ><span data-icon="filter"></span>พัดลมกรองอากาศ</span
+              ><span id="filt" class="badge">ไม่ทราบ</span>
+            </div>
+            <div class="system-row">
+              <span class="muted">ก๊าซภายนอก</span><span id="out-gas">—</span>
+            </div>
+            <div class="system-row">
+              <span class="muted">อัปเดตล่าสุด</span
+              ><small id="last-seen">ยังไม่มีข้อมูล</small>
+            </div>
+          </section>
         </div>
+        <section class="panel">
+          <header class="panel-heading">
+            <div>
+              <h2>
+                การแจ้งเตือนวันนี้ <span class="badge" id="alert-count">0</span>
+              </h2>
+              <p>เฉพาะอุปกรณ์นี้ · เก็บไว้ในเบราว์เซอร์นี้</p>
+            </div>
+            <button id="clear-alerts" class="button quiet small">
+              ล้างรายการ
+            </button>
+          </header>
+          <p id="alerts-empty" class="muted">ยังไม่มีเหตุการณ์แจ้งเตือน</p>
+          <ul id="alert-list" class="alert-list"></ul>
+        </section>
       </div>
-    </div>
-
-    <div class="bottom-right">
-      <div class="chart-card">
-        <div class="chart-header">PM2.5 History (เฉลี่ยทุก 10 นาที · อัปเดตทุก 1 นาที)</div>
-        <div class="chart-container">
-          <canvas id="pmChart"></canvas>
-        </div>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<script>
-// =====================================================================
-// ส่วน JavaScript: สมองของหน้าเว็บ ทำหน้าที่รับข้อมูล อัปเดตตัวเลข
-// เปลี่ยนสี แจ้งเตือน และวาดกราฟ ทั้งหมดทำงานอัตโนมัติ
-// =====================================================================
-
-// === ค่าเกณฑ์สำหรับตัดสินคุณภาพอากาศ (หน่วย µg/m³) ===
-// threshGood = 25  → ต่ำกว่านี้ = สีเขียว (ดี)
-// threshMod  = 50  → ต่ำกว่านี้ = สีส้ม (ปานกลาง), สูงกว่า = สีแดง (อันตราย)
-// threshAlert = 35 → สูงกว่านี้ = แจ้งเตือน
-let threshGood = 25, threshMod = 50, threshAlert = 35;
-let alertCount = 0;
-let alertDay = '';
-let previousAlertLevel = 0;           // นับจำนวนครั้งที่แจ้งเตือนวันนี้
-let lastAlertTime = 0;        // เวลาที่แจ้งเตือนครั้งล่าสุด (ป้องกันแจ้งถี่เกินไป)
-let alertDismissed = false;   // ผู้ใช้กดปิดแจ้งเตือนแล้วหรือยัง
-
-// ===== THEME TOGGLE =====
-function toggleTheme() {
-    let current = document.documentElement.getAttribute('data-theme');
-    let target = current === 'light' ? 'dark' : 'light';
-    if (target === 'dark') document.documentElement.removeAttribute('data-theme');
-    else document.documentElement.setAttribute('data-theme', 'light');
-    localStorage.setItem('theme', target);
-    
-    // Auto-refresh chart colors if we want, but doing a page reload is cleaner
-    // or just let the CSS handle it cleanly.
-}
-
-// === ขออนุญาตส่งการแจ้งเตือนไปที่เบราว์เซอร์ (Notification) ===
-// ถ้าผู้ใช้ยังไม่เคยอนุญาต จะมี popup ถามว่า "อนุญาตให้เว็บนี้ส่งการแจ้งเตือนไหม?"
-if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission();
-}
-
-// === ฟังก์ชันช่วยเหลือ (Helper Functions) ===
-
-// แปลงเวลาเป็นรูปแบบ ชั่วโมง:นาที:วินาที แบบไทย
-function fmt(d) {
-  return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-// เลือกสีตามค่าฝุ่น: เขียว(ดี) / ส้ม(ปานกลาง) / แดง(อันตราย)
-function getColor(val) {
-  if (val <= threshGood) return 'var(--green)';
-  if (val <= threshMod) return 'var(--amber)';
-  return 'var(--red)';
-}
-
-// เลือก CSS class ตามค่าฝุ่น (ใช้กำหนดสไตล์)
-function getClass(val) {
-  if (val <= threshGood) return 'c-green';
-  if (val <= threshMod) return 'c-amber';
-  return 'c-red';
-}
-
-// แปลงค่าฝุ่นเป็นข้อความสถานะ
-function getStatus(val) {
-  if (val <= threshGood) return 'Good';
-  if (val <= threshMod) return 'Moderate';
-  return 'Unhealthy';
-}
-
-// === คำนวณดัชนีคุณภาพอากาศ AQI ตามมาตรฐาน US EPA ===
-// รับค่า PM2.5 แล้วคำนวณเป็นดัชนี AQI (0-500)
-// 0-50 = ดี, 51-100 = ปานกลาง, 101-150 = ไม่ดีต่อกลุ่มเสี่ยง, 151+ = อันตราย
-function calculateAQI(pm) {
-  let cLow, cHigh, iLow, iHigh;
-  
-  // ตารางช่วงค่า PM2.5 กับช่วง AQI ตามมาตรฐาน US EPA
-  if (pm <= 12.0) { cLow = 0.0; cHigh = 12.0; iLow = 0; iHigh = 50; }
-  else if (pm <= 35.4) { cLow = 12.1; cHigh = 35.4; iLow = 51; iHigh = 100; }
-  else if (pm <= 55.4) { cLow = 35.5; cHigh = 55.4; iLow = 101; iHigh = 150; }
-  else if (pm <= 150.4) { cLow = 55.5; cHigh = 150.4; iLow = 151; iHigh = 200; }
-  else if (pm <= 250.4) { cLow = 150.5; cHigh = 250.4; iLow = 201; iHigh = 300; }
-  else if (pm <= 350.4) { cLow = 250.5; cHigh = 350.4; iLow = 301; iHigh = 400; }
-  else { cLow = 350.5; cHigh = 500.4; iLow = 401; iHigh = 500; }
-
-  if (pm > 500.4) return 500; // จำกัดค่าสูงสุดไว้ที่ 500
-
-  // สูตรคำนวณ AQI แบบ Linear Interpolation
-  return Math.round(((iHigh - iLow) / (cHigh - cLow)) * (pm - cLow) + iLow);
-}
-
-
-// === ควบคุมหน้าตาพัดลมบนหน้าจอ ===
-// ฟังก์ชันนี้ไม่ได้สั่งพัดลมจริง แค่อัปเดตหน้าเว็บให้ตรงกับสถานะที่ ESP32 ส่งมา
-function toggleFan(id) {
-  const isOn = document.getElementById('tog-' + id).checked;
-  syncFanUI(id, isOn);
-}
-
-// ซิงค์หน้าตาการ์ดพัดลม: เปลี่ยนข้อความ ON/OFF, สถานะ Running/Standby, และสีการ์ด
-function syncFanUI(id, isOn) {
-  const card = document.getElementById('fc-' + id);
-  const lbl = document.getElementById('tl-' + id);
-  const badge = document.getElementById('badge-' + id);
-  
-  if (document.getElementById('tog-' + id).checked !== isOn) {
-      document.getElementById('tog-' + id).checked = isOn;
-  }
-  
-  lbl.textContent = isOn ? 'ON' : 'OFF';
-  badge.innerHTML = isOn
-    ? '<span class="badge-dot"></span>Running'
-    : '<span class="badge-dot"></span>Standby';
-  if (isOn) card.classList.add('on'); else card.classList.remove('on');
-}
-
-
-// === ระบบแจ้งเตือนเมื่อค่าฝุ่นเกินเกณฑ์ ===
-// ฟังก์ชันนี้จะถูกเรียกเมื่อ PM2.5 สูงเกิน threshAlert (35 µg/m³)
-function syncAlertDay() {
-  const day = new Date().toLocaleDateString('en-CA');
-  if (day !== alertDay) {
-    alertDay = day;
-    let saved;
-    try { saved = JSON.parse(localStorage.getItem('airwatch-alerts') || 'null'); } catch {}
-    alertCount = saved && saved.day === day ? Number(saved.count) || 0 : 0;
-  }
-  document.getElementById('alert-count').textContent = alertCount;
-}
-
-function triggerAlert(inPm, reason) {
-  syncAlertDay();
-  const now = Date.now();
-  alertCount++;
-  localStorage.setItem('airwatch-alerts', JSON.stringify({ day: alertDay, count: alertCount }));           // เพิ่มตัวนับการแจ้งเตือน
-  alertDismissed = false;
-  document.getElementById('alert-count').textContent = alertCount;
-
-  // แสดงแถบแจ้งเตือนสีแดงบนหน้าจอ
-  const banner = document.getElementById('alert-banner');
-  document.getElementById('alert-title').textContent = '⚠️ ' + reason;
-  document.getElementById('alert-sub').textContent =
-    'PM2.5 ในบ้าน = ' + inPm + ' µg/m³ · เกินเกณฑ์ ' + threshAlert + ' µg/m³';
-  banner.classList.add('show');
-  document.body.classList.add('alert-state');
-
-  // ส่ง Notification เด้งขึ้นมาที่มุมจอคอม (จำกัดไม่ให้ส่งถี่เกิน 1 นาที)
-  if ('Notification' in window && Notification.permission === 'granted' && (now - lastAlertTime > 60000)) {
-    new Notification('⚠️ AirWatch Alert', {
-      body: reason + ' · PM2.5 = ' + inPm + ' µg/m³',
-      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💨</text></svg>'
-    });
-    lastAlertTime = now;
-  }
-
-  addLog(inPm, reason);  // บันทึกลง Alert Log
-}
-
-function dismissAlert() {
-  document.getElementById('alert-banner').classList.remove('show');
-  document.body.classList.remove('alert-state');
-  alertDismissed = true;
-}
-
-function addLog(pm, reason) {
-  const log = document.getElementById('notif-log');
-  const items = document.getElementById('notif-items');
-  const now = new Date();
-  const severity = pm > threshMod ? 'var(--red)' : 'var(--amber)';
-  const item = document.createElement('div');
-  item.className = 'notif-item';
-  item.innerHTML = `
-    <div class="notif-dot" style="background:${severity};"></div>
-    <div class="notif-msg">${reason} · <strong>${pm}</strong> µg/m³</div>
-    <div class="notif-time">${fmt(now)}</div>
-  `;
-  items.insertBefore(item, items.firstChild);
-  while (items.children.length > 100) items.lastElementChild.remove();
-  log.classList.add('has-items');
-}
-
-function clearLog() {
-  document.getElementById('notif-items').innerHTML = '';
-  document.getElementById('notif-log').classList.remove('has-items');
-}
-
-// ===== CLOCK =====
-function updateClock() {
-  syncAlertDay();
-  document.getElementById('time-display').textContent = fmt(new Date());
-}
-updateClock();
-setInterval(updateClock, 1000);
-
-// =====================================================================
-// ฟังก์ชันหลัก: อัปเดตหน้าเว็บทั้งหมดเมื่อได้รับข้อมูลใหม่
-// ฟังก์ชันนี้ถูกเรียกทุกครั้งที่ Socket.IO ส่งข้อมูลมาจากเซิร์ฟเวอร์
-// =====================================================================
-function updateUI(d) {
-  if (!d) return; // ถ้าไม่มีข้อมูลเข้ามา ให้หยุดทำงานทันที
-
-  // ดึงค่าฝุ่น PM2.5 จากข้อมูล (รองรับทั้งชื่อ key แบบ in_pm25 และ in_pm)
-  const measurement = value => value == null || !Number.isFinite(Number(value)) ? null : Number(value);
-  const inPm = measurement(d.in_pm25);
-  const outPm = measurement(d.out_pm25);
-
-  // Update PM displays
-  document.getElementById('in_pm25').textContent = inPm ?? 'No data';
-  document.getElementById('in_pm25').style.color = inPm == null ? 'var(--muted)' : getColor(inPm);
-  document.getElementById('out_pm25').textContent = outPm ?? 'No data';
-  document.getElementById('out_pm25').style.color = outPm == null ? 'var(--muted)' : getColor(outPm);
-
-  // =====================================================================
-  // อัปเดตค่า CO2
-  // =====================================================================
-  document.getElementById('in_co2').textContent = measurement(d.in_co2) ?? 'No data';
-  // MQ-2 raw ADC: no ppm claim without per-sensor calibration.
-  for (const id of ['in_gas', 'out_gas']) {
-    const value = measurement(d[id]);
-    document.getElementById(id).textContent = value == null ? 'No data' : value + ' ADC';
-  }
-
-  const barIn = document.getElementById('bar-in');
-  barIn.style.width = Math.min(100, (inPm / 75) * 100).toFixed(0) + '%';
-  barIn.style.background = getColor(inPm);
-
-  const barOut = document.getElementById('bar-out');
-  barOut.style.width = Math.min(100, (outPm / 75) * 100).toFixed(0) + '%';
-  barOut.style.background = getColor(outPm);
-
-  // Card accent
-  document.getElementById('card-in').style.setProperty('--accent-color', (inPm == null ? 'var(--muted)' : getColor(inPm)));
-  document.getElementById('card-out').style.setProperty('--accent-color', (outPm == null ? 'var(--muted)' : getColor(outPm)));
-
-  // AQI (คำนวณจาก indoor PM2.5 มาตรฐาน US EPA)
-  document.getElementById('aqi-val').textContent = inPm == null ? '-' : calculateAQI(inPm);
-
-  // Temp & Humidity (จากเซนเซอร์ AHT10)
-  const tempVal = measurement(d.temperature);
-  const humidityVal = measurement(d.humidity);
-  document.getElementById('temp-val').textContent = tempVal == null ? 'No data' : tempVal.toFixed(1) + '°C';
-  document.getElementById('humidity-val').textContent = humidityVal == null ? 'No data' : humidityVal.toFixed(0) + '%';
-
-  const level = inPm == null ? null : inPm > threshMod ? 2 : inPm > threshAlert ? 1 : 0;
-  if (level === null) {
-    // Missing data must not falsely reset the pollution episode.
-    document.getElementById('alert-banner').classList.remove('show');
-    document.body.classList.remove('alert-state');
-  } else if (level === 0) {
-    document.getElementById('alert-banner').classList.remove('show');
-    document.body.classList.remove('alert-state');
-    alertDismissed = false;
-    previousAlertLevel = 0;
-  } else {
-    if (!alertDismissed && (previousAlertLevel === 0 || level > previousAlertLevel)) {
-      triggerAlert(inPm, level === 2 ? 'ค่าฝุ่นในบ้านอยู่ในระดับอันตราย' : 'ค่าฝุ่นในบ้านเกินเกณฑ์ที่กำหนด');
-    } else if (!alertDismissed) {
-      document.getElementById('alert-sub').textContent = 'PM2.5 ในบ้าน = ' + inPm + ' µg/m³';
-      document.getElementById('alert-banner').classList.add('show');
-      document.body.classList.add('alert-state');
-    }
-    previousAlertLevel = level;
-  }
-
-  if (d.filt_fan_status != null) {
-      syncFanUI('filt', d.filt_fan_status == 1);
-  }
-  if (d.vent_fan_status != null) {
-      syncFanUI('vent', d.vent_fan_status == 1);
-  }
-
-  // Update Chart realtime (เฉลี่ยทุก 10 นาที)
-  // Server averages include measurements from before this page opened.
-  if (Date.now() - lastChartFetch >= 60000) void initChart();
-}
-
-// =====================================================================
-// เชื่อมต่อ Socket.IO กับเซิร์ฟเวอร์
-// เหมือนเปิดช่องสื่อสารถาวรระหว่างเบราว์เซอร์กับเซิร์ฟเวอร์
-// ทำให้รับข้อมูลได้ทันทีโดยไม่ต้องกดรีเฟรชหน้าเว็บ
-// =====================================================================
-const socket = io();
-
-// เมื่อเชื่อมต่อสำเร็จ
-socket.on('connect', () => {
-  console.log('🟢 WebSocket connected');
-  document.querySelector('.live-pill').style.borderColor = 'rgba(63,185,80,0.5)';
-});
-
-// เมื่อหลุดการเชื่อมต่อ
-socket.on('disconnect', () => {
-  console.log('🔴 WebSocket disconnected');
-  clearTimeout(sensorTimeout);
-  setDeviceOffline();
-});
-
-// =====================================================================
-// ระบบตรวจจับว่า ESP32 ออฟไลน์หรือไม่
-// ถ้าไม่ได้รับข้อมูลเกิน 15 วินาที จะถือว่าอุปกรณ์ออฟไลน์
-// และเปลี่ยนหน้าเว็บให้แสดงสถานะ OFFLINE
-// =====================================================================
-let sensorTimeout;
-let receivedLiveData = false;
-function setDeviceOffline() {
-  // เปลี่ยนสถานะเป็น OFFLINE (แดง)
-  const pill = document.querySelector('.live-pill');
-  pill.innerHTML = 'OFFLINE';
-  pill.style.color = 'var(--red)';
-  pill.style.background = 'var(--red-dim)';
-  pill.style.borderColor = 'rgba(248,81,73,0.5)';
-  
-  // ล้างค่าตัวเลขทั้งหมดเป็นขีด (-) เพื่อไม่ให้ผู้ใช้สับสนกับข้อมูลเก่า
-  const clearIds = ['in_pm25', 'out_pm25', 'in_co2', 'in_gas', 'out_gas', 'aqi-val', 'temp-val', 'humidity-val'];
-  clearIds.forEach(id => {
-      const el = document.getElementById(id);
-      if(el) {
-          el.textContent = '-';
-          if(id === 'in_pm25' || id === 'out_pm25') el.style.color = 'var(--text)';
-      }
-  });
-  document.getElementById('bar-in').style.width = '0%';
-  document.getElementById('bar-out').style.width = '0%';
-  
-  // ล้างการแจ้งเตือนทั้งหมด
-  syncAlertDay();
-  const alertBanner = document.getElementById('alert-banner');
-  if(alertBanner) alertBanner.classList.remove('show');
-  document.body.classList.remove('alert-state');
-  
-  // แสดงพัดลมทั้ง 2 ตัวเป็นสถานะปิดบนหน้าจอ
-  for (const id of ['filt', 'vent']) {
-    document.getElementById('fc-' + id).classList.remove('on');
-    document.getElementById('tog-' + id).checked = false;
-    document.getElementById('tl-' + id).textContent = 'UNKNOWN';
-    document.getElementById('badge-' + id).textContent = 'No telemetry';
-  }
-}
-
-function resetSensorTimeout() {
-  clearTimeout(sensorTimeout);
-  const pill = document.querySelector('.live-pill');
-  if (pill.innerHTML === 'OFFLINE' || pill.innerHTML === 'CONNECTING...') {
-      pill.innerHTML = '<div class="pulse"></div> LIVE';
-      pill.style.color = 'var(--green)';
-      pill.style.background = 'var(--green-dim)';
-      pill.style.borderColor = 'rgba(63,185,80,0.5)';
-  }
-  sensorTimeout = setTimeout(setDeviceOffline, 15000);
-}
-
-// เริ่มนับถอยหลังทันทีที่โหลดหน้าเว็บ
-sensorTimeout = setTimeout(setDeviceOffline, 15000);
-
-// รับข้อมูลจาก Server แบบ Real-time ทันทีที่ ESP32 ส่งเข้ามา
-socket.on('sensorData', (d) => {
-  receivedLiveData = true;
-  console.log('📡 Real-time data:', d);
-  resetSensorTimeout();
-  updateUI(d);
-});
-
-// =====================================================================
-// สร้างกราฟ PM2.5 ด้วย Chart.js
-// ดึงข้อมูลประวัติจากเซิร์ฟเวอร์ (ค่าเฉลี่ยทุก 10 นาที ย้อนหลัง 3 ชม.)
-// แล้ววาดเป็นกราฟเส้น 2 เส้น: ฝุ่นในบ้าน (เขียว) และฝุ่นนอกบ้าน (ฟ้า)
-// =====================================================================
-let pmChart;
-let chartFetchPending = false;
-let lastChartFetch = 0;
-async function initChart() {
-  if (chartFetchPending) return;
-  chartFetchPending = true;
-  lastChartFetch = Date.now();
-  try {
-    if (!pmChart) {
-      pmChart = new Chart(document.getElementById('pmChart').getContext('2d'), {
-        type: 'line',
-        data: { labels: [], datasets: [
-          { label: 'Indoor PM2.5', data: [], borderColor: '#3fb950', tension: 0.3, spanGaps: false },
-          { label: 'Outdoor PM2.5', data: [], borderColor: '#58a6ff', tension: 0.3, spanGaps: false }
-        ] },
-        options: { responsive: true, maintainAspectRatio: false,
-          scales: { y: { beginAtZero: true }, x: { ticks: { maxTicksLimit: 6 } } } }
-      });
-    }
-    const res = await fetch('/api/history');
-    if (!res.ok) throw new Error('History HTTP ' + res.status);
-    const rows = await res.json();
-    if (!Array.isArray(rows)) throw new Error('Invalid history');
-    pmChart.data.labels = rows.map(row => new Date(Number(row.bucket_ms)).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
-    const value = x => x == null ? null : Number(x);
-    pmChart.data.datasets[0].data = rows.map(row => value(row.in_pm25));
-    pmChart.data.datasets[1].data = rows.map(row => value(row.out_pm25));
-    pmChart.update('none');
-  } catch (err) {
-    console.error('Chart fetch failed:', err);
-  } finally {
-    chartFetchPending = false;
-  }
-}
-
-// =====================================================================
-// ฟังก์ชันโหลดข้อมูลครั้งแรกตอนเปิดหน้าเว็บ
-// 1. ดึงข้อมูลล่าสุดมาแสดงบนหน้าจอทันที (ไม่ต้องรอ ESP32 ส่งรอบใหม่)
-// 2. ดึงประวัติมาวาดกราฟ
-// =====================================================================
-async function fetchInitialData() {
-  try {
-    const res = await fetch('/api/latest');   // เรียก API ดึงข้อมูลล่าสุด
-    if (!res.ok) throw new Error('Latest HTTP ' + res.status);
-    const d = await res.json();
-    // An HTTP snapshot must not replace newer socket telemetry.
-    if (!receivedLiveData) {
-      const age = Date.now() - new Date(d.created_at).getTime();
-      if (d.id && age >= -5000 && age <= 15000) {
-        resetSensorTimeout();
-        updateUI(d);
-      } else setDeviceOffline();
-    }               // ถ้ามีข้อมูล ให้อัปเดตหน้าจอเลย
-    
-
-  } catch (err) {
-    console.error('Initial fetch error:', err);
-    if (!receivedLiveData) setDeviceOffline();
-  } finally {
-    await initChart();
-  }
-}
-fetchInitialData(); // เรียกทำงานทันทีเมื่อหน้าเว็บโหลดเสร็จ
-
-// =====================================================================
-// User Authentication & Device Claim
-// =====================================================================
-function getToken() { return localStorage.getItem('airwatch_token'); }
-function authHeaders() { return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' }; }
-
-async function checkAuth() {
-  const token = getToken();
-  if (!token) return;
-  try {
-    const res = await fetch('/api/auth/me', { headers: authHeaders() });
-    if (!res.ok) return;
-    const user = await res.json();
-    document.getElementById('user-display').textContent = '👤 ' + user.username;
-    document.getElementById('user-display').style.display = 'inline';
-    document.getElementById('login-link').style.display = 'none';
-    document.getElementById('logout-btn').style.display = 'inline-block';
-    document.getElementById('claim-btn').style.display = 'inline-block';
-    if (user.role === 'admin') {
-      document.getElementById('admin-link').style.display = 'inline-block';
-    }
-  } catch {}
-}
-checkAuth();
-
-function showClaimModal() {
-  const modal = document.getElementById('claim-modal');
-  modal.style.display = 'flex';
-  document.getElementById('claim-error').style.display = 'none';
-  document.getElementById('claim-key').value = '';
-  document.getElementById('claim-name').value = '';
-}
-function hideClaimModal() { document.getElementById('claim-modal').style.display = 'none'; }
-
-async function claimDevice() {
-  const key = document.getElementById('claim-key').value.trim();
-  const name = document.getElementById('claim-name').value.trim();
-  const errEl = document.getElementById('claim-error');
-  if (key.length < 16) {
-    errEl.textContent = 'Device key must be at least 16 characters';
-    errEl.style.display = 'block';
-    return;
-  }
-  try {
-    const res = await fetch('/api/devices/claim', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ device_key: key, device_name: name || undefined })
-    });
-    const data = await res.json();
-    if (!res.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
-    hideClaimModal();
-    alert('✅ ' + data.message);
-  } catch { errEl.textContent = 'Network error'; errEl.style.display = 'block'; }
-}
-
-function showLogoutModal() { document.getElementById('logout-modal').style.display = 'flex'; }
-function hideLogoutModal() { document.getElementById('logout-modal').style.display = 'none'; }
-function confirmLogout() {
-  localStorage.removeItem('airwatch_token');
-  window.location.href = '/login.html';
-}
-function logout() { showLogoutModal(); }
-</script>
-</body>
+      <footer class="footer-note">
+        <span>AirWatch / ทุกพื้นที่ เริ่มต้นที่อากาศ</span
+        ><span>ข้อมูลจากเซนเซอร์ · เกณฑ์ทดลองของโครงการ</span>
+      </footer>
+    </main>
+    <div id="dialogs"></div>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </body>
 </html>

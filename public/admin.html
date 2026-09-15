@@ -1,649 +1,135 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard | AirWatch</title>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg: #0d1117; --surface: #161b22; --surface2: #1c2330;
-            --border: rgba(255, 255, 255, 0.07); --border2: rgba(255, 255, 255, 0.13);
-            --text: #e6edf3; --muted: #7d8590;
-            --green: #3fb950; --green-dim: rgba(63, 185, 80, 0.12);
-            --blue: #58a6ff; --blue-dim: rgba(88, 166, 255, 0.12);
-            --amber: #d29922; --amber-dim: rgba(210, 153, 34, 0.15);
-            --red: #f85149; --red-dim: rgba(248, 81, 73, 0.15);
-            --purple: #a371f7; --purple-dim: rgba(163, 113, 247, 0.15);
-            --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans Thai', sans-serif;
-            --topbar-bg: rgba(13, 17, 23, 0.92);
-        }
-        [data-theme="light"] {
-            --bg: #f6f8fa; --surface: #ffffff; --surface2: #eaeef2;
-            --border: rgba(0, 0, 0, 0.1); --border2: rgba(0, 0, 0, 0.15);
-            --text: #1F2328; --muted: #656d76;
-            --green: #1a7f37; --green-dim: rgba(26, 127, 55, 0.12);
-            --blue: #0969da; --blue-dim: rgba(9, 105, 218, 0.12);
-            --amber: #9a6700; --amber-dim: rgba(154, 103, 0, 0.15);
-            --red: #d1242f; --red-dim: rgba(209, 36, 47, 0.15);
-            --purple: #8250df; --purple-dim: rgba(130, 80, 223, 0.15);
-            --topbar-bg: rgba(246, 248, 250, 0.92);
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: var(--sans);
-            background-color: var(--bg);
-            color: var(--text);
-            line-height: 1.5;
-            transition: background-color 0.3s, color 0.3s;
-        }
-
-        /* Top Bar */
-        .topbar {
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            background: var(--topbar-bg);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border);
-            padding: 0.75rem 1.5rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-weight: 600;
-            font-size: 1.1rem;
-            letter-spacing: -0.01em;
-        }
-        
-        .brand-dot {
-            color: var(--muted);
-        }
-
-        .brand-admin {
-            color: var(--purple);
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            background: var(--purple-dim);
-            padding: 0.1rem 0.4rem;
-            border-radius: 4px;
-        }
-
-        .topbar-actions {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .btn {
-            background: var(--surface2);
-            color: var(--text);
-            border: 1px solid var(--border);
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            font-family: var(--sans);
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .btn:hover {
-            background: var(--border);
-            border-color: var(--border2);
-        }
-
-        .theme-toggle {
-            background: transparent;
-            border: none;
-            color: var(--muted);
-            cursor: pointer;
-            padding: 0.5rem;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .theme-toggle:hover {
-            color: var(--text);
-            background: var(--surface2);
-        }
-        
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.875rem;
-            color: var(--muted);
-            padding-left: 1rem;
-            border-left: 1px solid var(--border);
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem 1.5rem;
-        }
-        
-        h2 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-            color: var(--text);
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2.5rem;
-        }
-
-        .stat-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, var(--blue), var(--purple));
-            opacity: 0.5;
-        }
-
-        .stat-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: var(--muted);
-            font-size: 0.875rem;
-            font-weight: 500;
-        }
-        
-        .stat-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .stat-icon.users { background: var(--blue-dim); color: var(--blue); }
-        .stat-icon.devices { background: var(--green-dim); color: var(--green); }
-        .stat-icon.logs { background: var(--amber-dim); color: var(--amber); }
-
-        .stat-value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            font-family: var(--mono);
-            line-height: 1.2;
-        }
-
-        .stat-sub {
-            font-size: 0.875rem;
-            color: var(--muted);
-        }
-
-        /* Tables */
-        .section {
-            margin-bottom: 2.5rem;
-        }
-
-        .table-container {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-        }
-
-        th, td {
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        th {
-            background: var(--surface2);
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--muted);
-            font-weight: 600;
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        tbody tr {
-            transition: background-color 0.15s;
-        }
-
-        tbody tr:hover {
-            background: var(--surface2);
-        }
-
-        .mono-text {
-            font-family: var(--mono);
-            font-size: 0.875rem;
-        }
-
-        /* Badges */
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.15rem 0.5rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.02em;
-        }
-
-        .badge-admin {
-            background: var(--purple-dim);
-            color: var(--purple);
-            border: 1px solid rgba(163, 113, 247, 0.3);
-        }
-
-        .badge-user {
-            background: var(--blue-dim);
-            color: var(--blue);
-            border: 1px solid rgba(88, 166, 255, 0.3);
-        }
-
-        /* Status Dot */
-        .status-cell {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            position: relative;
-        }
-
-        .status-dot.online {
-            background-color: var(--green);
-            box-shadow: 0 0 0 4px var(--green-dim);
-        }
-        
-        .status-dot.online::after {
-            content: '';
-            position: absolute;
-            top: -2px; left: -2px; right: -2px; bottom: -2px;
-            border-radius: 50%;
-            border: 2px solid var(--green);
-            animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-        }
-
-        .status-dot.offline {
-            background-color: var(--red);
-            box-shadow: 0 0 0 4px var(--red-dim);
-        }
-
-        @keyframes ping {
-            75%, 100% {
-                transform: scale(2);
-                opacity: 0;
-            }
-        }
-        
-        /* Loading & Error State */
-        .loading {
-            padding: 3rem;
-            text-align: center;
-            color: var(--muted);
-            font-style: italic;
-        }
-        .error-msg {
-            color: var(--red);
-            padding: 1rem;
-            background: var(--red-dim);
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            display: none;
-        }
-
-        @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-            .table-container {
-                overflow-x: auto;
-            }
-            th, td {
-                padding: 0.75rem 1rem;
-                white-space: nowrap;
-            }
-            .topbar {
-                flex-direction: column;
-                gap: 1rem;
-                align-items: flex-start;
-            }
-            .topbar-actions {
-                width: 100%;
-                justify-content: space-between;
-            }
-            .user-info {
-                border-left: none;
-                padding-left: 0;
-            }
-        }
-    </style>
-</head>
-<body>
-
-    <header class="topbar">
-        <div class="brand">
-            AirWatch <span class="brand-dot">·</span> <span class="brand-admin">Admin</span>
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>ผู้ดูแลระบบ · AirWatch</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/js/theme.js"></script>
+    <script defer src="/js/common.js"></script>
+    <script defer src="/js/admin.js"></script>
+  </head>
+  <body data-page="admin">
+    <a class="sr-only" href="#main">ข้ามไปเนื้อหา</a>
+    <aside class="sidebar" id="sidebar" aria-label="เมนูหลัก"></aside>
+    <main class="main" id="main">
+      <header class="topline">
+        <span class="breadcrumb">WORKSPACE / ADMIN</span>
+        <div class="top-actions">
+          <span class="user-short muted" id="top-user"></span
+          ><button
+            class="button icon-button"
+            data-theme-toggle
+            aria-label="สลับโหมดสี"
+          >
+            <span data-icon="sun"></span></button
+          ><button class="button quiet small" data-logout>ออกจากระบบ</button>
         </div>
-        <div class="topbar-actions">
-            <button class="theme-toggle" id="themeToggle" aria-label="Toggle Theme">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="5"></circle>
-                    <line x1="12" y1="1" x2="12" y2="3"></line>
-                    <line x1="12" y1="21" x2="12" y2="23"></line>
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                    <line x1="1" y1="12" x2="3" y2="12"></line>
-                    <line x1="21" y1="12" x2="23" y2="12"></line>
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                </svg>
-            </button>
-            <a href="/" class="btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                Dashboard
-            </a>
-            <div class="user-info" id="userInfo">
-                Admin User
+      </header>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">AIRWATCH · ADMIN</p>
+          <h1>ดูแลทุกพื้นที่ในที่เดียว</h1>
+          <p>ภาพรวมสมาชิก อุปกรณ์ และการเชื่อมต่อของระบบ</p>
+        </div>
+        <div class="actions">
+          <button id="refresh" class="button">
+            <span data-icon="refresh"></span>รีเฟรช
+          </button>
+        </div>
+      </section>
+      <div id="page-error" role="alert" class="banner error" hidden></div>
+      <section class="metric-grid">
+        <article class="panel">
+          <div class="metric-label">
+            สมาชิกทั้งหมด<span data-icon="users"></span>
+          </div>
+          <div class="metric-number">
+            <span id="total-users">—</span><small></small>
+          </div>
+          <small id="total-users-note">รอข้อมูลอุปกรณ์</small>
+        </article>
+        <article class="panel">
+          <div class="metric-label">
+            อุปกรณ์ทั้งหมด<span data-icon="device"></span>
+          </div>
+          <div class="metric-number">
+            <span id="total-devices">—</span><small></small>
+          </div>
+          <small id="total-devices-note">รอข้อมูลอุปกรณ์</small>
+        </article>
+        <article class="panel">
+          <div class="metric-label">
+            ออนไลน์ตอนนี้<span data-icon="activity"></span>
+          </div>
+          <div class="metric-number">
+            <span id="online-devices">—</span><small></small>
+          </div>
+          <small id="online-devices-note">รอข้อมูลอุปกรณ์</small>
+        </article>
+        <article class="panel">
+          <div class="metric-label">
+            ข้อมูลที่บันทึก<span data-icon="history"></span>
+          </div>
+          <div class="metric-number">
+            <span id="total-logs">—</span><small></small>
+          </div>
+          <small id="total-logs-note">รอข้อมูลอุปกรณ์</small>
+        </article>
+      </section>
+      <div class="stack">
+        <section class="panel">
+          <header class="panel-heading">
+            <div>
+              <h2>อุปกรณ์ทั้งหมด</h2>
+              <p>ดูเจ้าของอุปกรณ์และสถานะการส่งข้อมูล</p>
             </div>
-            <button onclick="logout()" class="btn" style="border-color: var(--red-dim); color: var(--red);">Logout</button>
-        </div>
-    </header>
-
-    <div class="container">
-        <div id="errorBanner" class="error-msg"></div>
-        
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span>Total Users</span>
-                    <div class="stat-icon users">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                    </div>
-                </div>
-                <div class="stat-value" id="valUsers">--</div>
-                <div class="stat-sub">Registered accounts</div>
+            <span class="badge">ADMIN</span>
+          </header>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>อุปกรณ์</th>
+                  <th>เจ้าของ</th>
+                  <th>สถานะ</th>
+                  <th>ข้อมูลล่าสุด</th>
+                  <th>รายละเอียด</th>
+                </tr>
+              </thead>
+              <tbody id="admin-devices"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="panel">
+          <header class="panel-heading">
+            <div>
+              <h2>สมาชิก</h2>
+              <p>บทบาทและวันที่เข้าร่วมระบบ</p>
             </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span>Active Devices</span>
-                    <div class="stat-icon devices">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
-                    </div>
-                </div>
-                <div class="stat-value"><span id="valActiveDevices">--</span> <span style="color:var(--muted); font-size:1.5rem;">/ <span id="valTotalDevices">--</span></span></div>
-                <div class="stat-sub">Currently reporting telemetry</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span>Total Logs</span>
-                    <div class="stat-icon logs">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
-                    </div>
-                </div>
-                <div class="stat-value" id="valLogs">--</div>
-                <div class="stat-sub">Telemetry records stored</div>
-            </div>
-        </div>
-
-        <!-- Devices Section -->
-        <div class="section">
-            <h2>All Devices</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>Device Name</th>
-                            <th>Device Key</th>
-                            <th>Owner</th>
-                            <th>Last Seen</th>
-                        </tr>
-                    </thead>
-                    <tbody id="devicesBody">
-                        <tr><td colspan="5" class="loading">Loading devices...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Users Section -->
-        <div class="section">
-            <h2>Registered Users</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Username</th>
-                            <th>Email</th>
-                            <th>Role</th>
-                            <th>Joined Date</th>
-                        </tr>
-                    </thead>
-                    <tbody id="usersBody">
-                        <tr><td colspan="4" class="loading">Loading users...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Logout Modal -->
-    <div id="logout-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:200; align-items:center; justify-content:center;">
-      <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:2rem; width:90%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,0.4); text-align:center;">
-        <div style="width:48px; height:48px; border-radius:50%; background:var(--red-dim); color:var(--red); display:inline-flex; align-items:center; justify-content:center; margin-bottom:1rem;">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-        </div>
-        <h3 style="font-family:var(--sans); font-size:16px; font-weight:600; color:var(--text); margin-bottom:0.5rem;">ยืนยันการออกจากระบบ</h3>
-        <p style="font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:1.5rem;">คุณต้องการออกจากระบบ AirWatch ใช่หรือไม่?</p>
-        <div style="display:flex; gap:10px; justify-content:center;">
-          <button onclick="hideLogoutModal()" style="flex:1; background:var(--surface2); border:1px solid var(--border); color:var(--text); cursor:pointer; padding:10px; border-radius:8px; font-size:13px; font-weight:500;">ยกเลิก</button>
-          <button onclick="confirmLogout()" style="flex:1; background:var(--red); border:none; color:#fff; cursor:pointer; padding:10px; border-radius:8px; font-size:13px; font-weight:600;">ออกจากระบบ</button>
-        </div>
+          </header>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>ชื่อผู้ใช้</th>
+                  <th>อีเมล</th>
+                  <th>บทบาท</th>
+                  <th>เข้าร่วมเมื่อ</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users"></tbody>
+            </table>
+          </div>
+        </section>
       </div>
-    </div>
-
-    <script>
-        const API_URL = '/api/admin';
-        
-        // Theme Management
-        const themeToggle = document.getElementById('themeToggle');
-        const html = document.documentElement;
-        
-        const savedTheme = localStorage.getItem('airwatch_admin_theme') || 'dark';
-        html.setAttribute('data-theme', savedTheme);
-        
-        themeToggle.addEventListener('click', () => {
-            const currentTheme = html.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            html.setAttribute('data-theme', newTheme);
-            localStorage.setItem('airwatch_admin_theme', newTheme);
-        });
-
-        // Auth
-        const token = localStorage.getItem('airwatch_token');
-        if (!token) {
-            window.location.href = '/login.html';
-        }
-
-        function showLogoutModal() { document.getElementById('logout-modal').style.display = 'flex'; }
-        function hideLogoutModal() { document.getElementById('logout-modal').style.display = 'none'; }
-        function confirmLogout() {
-            localStorage.removeItem('airwatch_token');
-            window.location.href = '/login.html';
-        }
-        function logout() { showLogoutModal(); }
-
-        // Fetch logic
-        async function fetchAdminData(endpoint) {
-            try {
-                const response = await fetch(`${API_URL}${endpoint}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                if (response.status === 401 || response.status === 403) {
-                    window.location.href = '/login.html';
-                    return null;
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch ${endpoint}: ${response.statusText}`);
-                }
-                
-                return await response.json();
-            } catch (err) {
-                console.error(err);
-                showError(err.message);
-                return null;
-            }
-        }
-
-        function showError(msg) {
-            const banner = document.getElementById('errorBanner');
-            banner.textContent = msg;
-            banner.style.display = 'block';
-            setTimeout(() => { banner.style.display = 'none'; }, 5000);
-        }
-
-        function truncate(str, len = 12) {
-            if (!str) return '';
-            return str.length > len ? str.substring(0, len) + '...' : str;
-        }
-
-        function formatDate(dateStr) {
-            if (!dateStr) return 'Never';
-            const d = new Date(dateStr);
-            return isNaN(d) ? 'Invalid Date' : d.toLocaleString();
-        }
-        
-        function formatNumber(num) {
-            return num?.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") || '0';
-        }
-
-        async function updateDashboard() {
-            // Stats
-            const stats = await fetchAdminData('/stats');
-            if (stats) {
-                document.getElementById('valUsers').textContent = formatNumber(stats.totalUsers);
-                document.getElementById('valActiveDevices').textContent = formatNumber(stats.onlineDevices);
-                document.getElementById('valTotalDevices').textContent = formatNumber(stats.totalDevices);
-                document.getElementById('valLogs').textContent = formatNumber(stats.totalLogs);
-            }
-
-            // Devices
-            const devices = await fetchAdminData('/devices');
-            if (devices) {
-                const dBody = document.getElementById('devicesBody');
-                if (devices.length === 0) {
-                    dBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 2rem; color: var(--muted);">No devices found</td></tr>';
-                } else {
-                    dBody.innerHTML = devices.map(d => `
-                        <tr>
-                            <td>
-                                <div class="status-cell">
-                                    <div class="status-dot ${d.is_online ? 'online' : 'offline'}" title="${d.is_online ? 'Online' : 'Offline'}"></div>
-                                    <span style="color: var(--muted); font-size: 0.875rem;">${d.is_online ? 'Online' : 'Offline'}</span>
-                                </div>
-                            </td>
-                            <td style="font-weight: 500;">${d.device_name || 'Unnamed'}</td>
-                            <td class="mono-text" style="color: var(--muted);">${truncate(d.device_key, 16)}</td>
-                            <td>${d.owner_username || 'Unknown'}</td>
-                            <td style="color: var(--muted); font-size: 0.875rem;">${formatDate(d.last_seen_at)}</td>
-                        </tr>
-                    `).join('');
-                }
-            }
-
-            // Users
-            const users = await fetchAdminData('/users');
-            if (users) {
-                const uBody = document.getElementById('usersBody');
-                if (users.length === 0) {
-                    uBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 2rem; color: var(--muted);">No users found</td></tr>';
-                } else {
-                    uBody.innerHTML = users.map(u => `
-                        <tr>
-                            <td style="font-weight: 500;">${u.username}</td>
-                            <td style="color: var(--muted);">${u.email || '-'}</td>
-                            <td>
-                                <span class="badge ${u.role === 'admin' ? 'badge-admin' : 'badge-user'}">${u.role || 'user'}</span>
-                            </td>
-                            <td style="color: var(--muted); font-size: 0.875rem;">${formatDate(u.created_at)}</td>
-                        </tr>
-                    `).join('');
-                }
-                
-                // Set username in top bar if available in local storage or use token parsing
-                try {
-                    const tokenParts = token.split('.');
-                    if (tokenParts.length === 3) {
-                        const payload = JSON.parse(atob(tokenParts[1]));
-                        if (payload.username) {
-                            document.getElementById('userInfo').textContent = `Hi, ${payload.username}`;
-                        }
-                    }
-                } catch(e) {}
-            }
-        }
-
-        // Init
-        updateDashboard();
-        
-        // Auto-refresh every 30s
-        setInterval(updateDashboard, 30000);
-
-    </script>
-</body>
+      <footer class="footer-note">
+        <span>AirWatch / ทุกพื้นที่ เริ่มต้นที่อากาศ</span
+        ><span>ข้อมูลจากเซนเซอร์ · เกณฑ์ทดลองของโครงการ</span>
+      </footer>
+    </main>
+    <div id="dialogs"></div>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </body>
 </html>
