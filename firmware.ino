@@ -35,6 +35,7 @@
   #include <Preferences.h>      // ไลบรารีสำหรับบันทึกค่า Server IP ลงความจำถาวรของ ESP32
   #include <esp_idf_version.h>
   #include <math.h>
+  #include "sensor_filter.h"
   #include <esp_task_wdt.h>     // ★ ไลบรารี Watchdog Timer ป้องกัน ESP32 ค้าง จะรีสตาร์ทอัตโนมัติ
 
   // =====================================================================
@@ -135,6 +136,7 @@
   unsigned long lastPmOutReadTime = 0; 
   unsigned long lastPmsRequest = 0;    
 
+  SensorFilter pmFilter(0.25f), pmOutFilter(0.25f), gasFilter(0.2f), gasOutFilter(0.2f);
   int currentPmValue = 0;              // ค่าฝุ่นในบ้าน
   int currentPmOutValue = 0;           // ค่าฝุ่นนอกบ้าน
 
@@ -314,11 +316,8 @@
       if (rawPm > PM_MAX_CAP) rawPm = PM_MAX_CAP;  // Cap ค่าสูงสุดป้องกันเพี้ยน
       
       // ★ ตัวกรองสัญญาณ EMA (Exponential Moving Average) ป้องกันค่ากระโดดเด้งมั่ว
-      if (currentPmValue == 0 || lastPmReadTime == 0) {
-        currentPmValue = rawPm;
-      } else {
-        currentPmValue = (int)((currentPmValue * 0.75) + (rawPm * 0.25));
-      }
+      currentPmValue = (int)lroundf(pmFilter.update(rawPm,
+          lastPmReadTime == 0 || millis() - lastPmReadTime > PM_TIMEOUT));
       lastPmReadTime = millis();
     }
 
@@ -331,11 +330,8 @@
       int rawPmOut = dataOut.PM_AE_UG_2_5;
       if (rawPmOut > PM_MAX_CAP) rawPmOut = PM_MAX_CAP;  // Cap ค่าสูงสุด
       
-      if (currentPmOutValue == 0 || lastPmOutReadTime == 0) {
-        currentPmOutValue = rawPmOut;
-      } else {
-        currentPmOutValue = (int)((currentPmOutValue * 0.75) + (rawPmOut * 0.25));
-      }
+      currentPmOutValue = (int)lroundf(pmOutFilter.update(rawPmOut,
+          lastPmOutReadTime == 0 || millis() - lastPmOutReadTime > PM_TIMEOUT));
       lastPmOutReadTime = millis();
     }
 
@@ -472,11 +468,7 @@
         delayMicroseconds(150);
       }
       int rawGas = gasSum / 20;
-      if (lastGas == 0) {
-        lastGas = rawGas;
-      } else {
-        lastGas = (int)((lastGas * 0.8) + (rawGas * 0.2));
-      }
+      lastGas = (int)lroundf(gasFilter.update(rawGas));
   #if HAS_OUTDOOR_SENSORS
       long gasOutSum = 0;
       for (int i = 0; i < 20; i++) {
@@ -484,11 +476,7 @@
         delayMicroseconds(150);
       }
       int rawGasOut = gasOutSum / 20;
-      if (lastGasOut == 0) {
-        lastGasOut = rawGasOut;
-      } else {
-        lastGasOut = (int)((lastGasOut * 0.8) + (rawGasOut * 0.2));
-      }
+      lastGasOut = (int)lroundf(gasOutFilter.update(rawGasOut));
   #else
       lastGasOut = 0; // บังคับเป็น 0 ถ้ายังไม่มีเซนเซอร์ ป้องกันค่ากวน
   #endif

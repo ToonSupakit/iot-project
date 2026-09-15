@@ -20,46 +20,72 @@ ESP32 อ่านเซนเซอร์และควบคุมพัด�
 
 เว้นระยะเปลี่ยนสถานะรีเลย์อย่างน้อย 5 วินาที ค่า ENS160 คือ **eCO₂** และยังไม่ใช้ควบคุมพัดลม MQ-2 แสดงเป็น **ADC ดิบ** ไม่แปลงเป็น ppm โดยใช้ค่า calibration สมมติ เกณฑ์แก๊สเป็นค่าทดลองของต้นแบบ ไม่ใช่ระบบรับรองตรวจจับแก๊สรั่วหรือไฟไหม้
 
-## ติดตั้งเซิร์ฟเวอร์
+## ติดตั้งบน Laragon / Windows
 
-ใช้ Node.js 20 ขึ้นไปและ MySQL ติดตั้ง dependencies ด้วย `npm ci`
+ใช้ Node.js 20 ขึ้นไป เปิด MySQL ใน Laragon แล้วเปิด Terminal ในโฟลเดอร์โปรเจกต์ใน VS Code
 
-### ฐานข้อมูลใหม่
-
-รัน `db/schema.sql` ผ่าน MySQL client หรือ phpMyAdmin เพื่อสร้างฐานข้อมูล ตาราง และ index
-
-### อัปเกรดฐานข้อมูลเดิม
-
-สำรองข้อมูลแล้วรัน `db/migrate-nullable-sensors.sql` **ก่อนอัปเดต firmware** เพื่อให้ค่าที่ไม่มีข้อมูลเก็บเป็น SQL NULL ได้ ไฟล์นี้ไม่ลบประวัติเดิม และไม่ตีความค่า 0 เก่าย้อนหลังว่าเป็นข้อมูลหาย หากยังไม่มี index ของ `created_at` ให้เพิ่มตามคำสั่งท้ายไฟล์เพียงครั้งเดียว
-
-### ตั้งค่า environment
-
-| ตัวแปร | ค่าเริ่มต้น / ความหมาย |
-| --- | --- |
-| DEVICE_API_KEY | จำเป็น: รหัสสุ่ม 16–64 ตัวอักษร ต้องตรงกับบอร์ด |
-| PORT | 3000 |
-| DB_HOST | localhost |
-| DB_PORT | 3306 |
-| DB_USER | root (ควรใช้บัญชีเฉพาะแอปเมื่อใช้งานจริง) |
-| DB_PASSWORD | ว่าง |
-| DB_NAME | smart_air_db |
-
-ตัวอย่าง PowerShell สร้าง key ไว้ใน session แล้วเริ่มเซิร์ฟเวอร์:
+1. สำรองฐานข้อมูลเดิมผ่าน HeidiSQL → คลิกขวา `smart_air_db` → Export database as SQL
+2. ถ้ายังไม่มีฐานข้อมูล ให้เปิด Query ใน HeidiSQL แล้วรัน `CREATE DATABASE IF NOT EXISTS smart_air_db;`
+3. ติดตั้งและปรับโครงสร้าง (ใช้ได้ทั้งฐานใหม่และฐานเดิม):
 
 ```powershell
 npm ci
-$env:DEVICE_API_KEY = node -e "console.log(require('node:crypto').randomBytes(24).toString('hex'))"
-$env:DB_PASSWORD = 'YOUR_DATABASE_PASSWORD'
+$env:DB_HOST = '127.0.0.1'
+$env:DB_NAME = 'smart_air_db'
+# ตั้ง DB_USER / DB_PASSWORD / DB_PORT ถ้าต่างจากค่าเริ่มต้น
+npm run migrate
+npm test
+```
+
+Migration สร้างตาราง users/devices และ device_id ที่ขาด อนุญาต NULL โดยคงชนิด FLOAT/DECIMAL/INT เดิมและประวัติไว้ รันซ้ำได้ หากล้มเหลวจะคืน exit code ที่ไม่ใช่ 0 ให้แก้ข้อผิดพลาดก่อนเริ่ม server ไม่ต้องติ๊ก Allow NULL ทีละช่องหรือรัน ALTER เก่าซ้ำ
+
+ข้อมูลก่อนมี device_id ยังเก็บอยู่ แต่จะไม่แสดงในบัญชีใดจนกว่าจะตรวจสอบเจ้าของและผูกข้อมูลอย่างชัดเจน ระบบไม่เดาว่าประวัติทั้งหมดเป็นของผู้สมัครคนแรก
+
+### ตั้งค่าเซิร์ฟเวอร์และผู้ดูแล
+
+| ตัวแปร | ค่าเริ่มต้น / ความหมาย |
+| --- | --- |
+| JWT_SECRET | จำเป็น: ค่าสุ่มอย่างน้อย 32 ตัวอักษร เก็บถาวร ใช้ค่าเดิมเมื่อเปิด server ใหม่ |
+| PORT | 3000 |
+| DB_HOST / DB_PORT | localhost / 3306 |
+| DB_USER / DB_PASSWORD | root / ว่าง |
+| DB_NAME | smart_air_db |
+| DEVICE_API_KEY | ไม่จำเป็น ใช้ลงทะเบียนอุปกรณ์เก่าที่ยังไม่มีในฐานข้อมูลเท่านั้น 16–64 ตัวอักษร |
+
+สร้าง JWT_SECRET **ครั้งเดียว** แล้วเก็บอย่างปลอดภัยนอก repository ตัวแปร `$env:` อยู่เฉพาะ Terminal session นี้ เมื่อเปิดใหม่ต้องตั้งค่าเดิมอีกครั้ง:
+
+```powershell
+$env:JWT_SECRET = node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+สร้างผู้ดูแลผ่าน Terminal ของเจ้าของระบบเท่านั้น (แทนค่าตัวอย่างด้วยค่าจริงส่วนตัว):
+
+```powershell
+$env:ADMIN_USERNAME = 'your-admin-name'
+$env:ADMIN_EMAIL = 'your-email@example.com'
+$env:ADMIN_PASSWORD = 'REPLACE_WITH_YOUR_PRIVATE_PASSWORD'
+npm run seed
+Remove-Item Env:ADMIN_PASSWORD
 npm start
 ```
 
-ดูค่า `$env:DEVICE_API_KEY` ใน terminal ของตนเองเพื่อนำไปกรอกบอร์ด เก็บ key ไว้เพื่อใช้ซ้ำเมื่อเปิด session ใหม่ อย่าสร้าง key ใหม่ทุกครั้งถ้าไม่ได้เปลี่ยนในบอร์ดด้วย และห้าม commit key จริง
+รหัสผ่านใหม่ยาวอย่างน้อย 12 ตัวอักษร ไม่เกิน 72 ไบต์ UTF-8 ไม่มีบัญชีหรือรหัสผ่านเริ่มต้น การสมัครผ่านเว็บได้สิทธิ์สมาชิกเสมอ แม้เป็นบัญชีแรก Seed ซ้ำจะไม่เขียนทับบัญชีเดิม หากต้องการเปลี่ยนรหัสบัญชีที่มีอยู่ให้ตั้ง ADMIN_EMAIL/ADMIN_PASSWORD แล้วรัน `npm run seed -- --reset-password` (ไม่เปลี่ยน role)
 
-เปิด `http://localhost:3000` บนเครื่องเซิร์ฟเวอร์ หรือ `http://<SERVER_IP>:3000` จากมือถือบน Wi-Fi เดียวกัน หน้าเว็บใช้ relative API และ `io()` จึงเชื่อมต่อเครื่องที่กำลังเปิดอยู่ เปิด firewall ให้ TCP 3000 (หรือ PORT ที่ตั้ง) และ UDP 41234 ภายใน LAN
+หากเคยใช้บัญชีตัวอย่างจากรุ่นก่อน ต้องเปลี่ยนรหัสบัญชีเหล่านั้นเอง และเปลี่ยน JWT_SECRET พร้อม restart เพื่อยกเลิก token เดิมทั้งหมด การออกจากระบบลบ token ในเบราว์เซอร์นั้น ส่วน token ที่ถูกคัดลอกไปแล้วมีอายุได้ถึง 7 วันถ้ายังไม่เปลี่ยน secret
+
+เปิด `http://localhost:3000` หรือ `http://<SERVER_IP>:3000` จากมือถือใน Wi-Fi เดียวกัน เปิด firewall TCP ตาม PORT และ UDP 41234 เฉพาะ LAN ที่ใช้งาน
+
+### เพิ่มอุปกรณ์
+
+เข้าสู่ระบบ → เพิ่มอุปกรณ์ → สร้างอุปกรณ์ใหม่ → ตั้งชื่อพื้นที่ → คัดลอกรหัสที่ระบบสร้างไปใส่บอร์ด แต่ละบอร์ดมี key ของตัวเอง Backend ตรวจ key กับตาราง devices จึงรองรับหลายอุปกรณ์พร้อมกัน
+
+การผูกอุปกรณ์เดิมรับเฉพาะ key ที่ลงทะเบียนแล้วและยังไม่มีเจ้าของ การแย่งผูกพร้อมกันสำเร็จได้เพียงบัญชีเดียว ผู้ดูแลเห็นทุกอุปกรณ์ สมาชิกเห็นเฉพาะของตน รหัสไม่แสดงในตารางรวม ต้องกดดูรหัสโดยเจ้าของหรือผู้ดูแล
+
+รหัส demo ที่เคยเผยแพร่ใช้ส่งข้อมูลไม่ได้อีกต่อไป ให้เปลี่ยนรหัสจากหน้าเว็บแล้วตั้งค่าใหม่บนบอร์ด หากเคยตั้ง DEVICE_API_KEY ใน environment ให้ลบหรือเปลี่ยนให้ตรงด้วย เพื่อไม่ลงทะเบียน key เก่าซ้ำตอน restart
 
 ## ติดตั้ง firmware
 
-1. เปิด `firmware.ino` ใน Arduino IDE; หาก IDE สร้างโฟลเดอร์ sketch ให้ใช้ชื่อโฟลเดอร์ตรงกับ sketch
+1. เปิด `firmware.ino` ใน Arduino IDE และวาง `sensor_filter.h` ในโฟลเดอร์ sketch เดียวกัน หาก IDE ย้าย sketch ให้คัดลอก header ตามไปด้วย
 2. ติดตั้ง ESP32 board package และ libraries: WiFiManager, Adafruit AHTX0, SparkFun ENS160, PMS Library
 3. เลือกบอร์ดและพอร์ต แล้วอัปโหลด
 4. ครั้งแรกบอร์ดเปิด `AirWatch-Setup` ให้เชื่อมต่อจากมือถือ เลือก Wi-Fi และกรอก Server IP กับ Device API key ที่ตรงกับเซิร์ฟเวอร์
@@ -90,29 +116,33 @@ UDP discovery ค้นหา IP และ port ใน LAN หากส่งล
 
 ทุก field ต้องมี ค่าเซนเซอร์ใช้ number หรือ null; พัดลมใช้ 0/1 และห้ามเปิดพร้อมกัน ค่า 0 เป็นข้อมูลจริง ส่วน null คือไม่มีข้อมูล/หมดอายุ Backend ตรวจชนิดและช่วงค่า จำกัด request 4 KB และไม่ส่งรายละเอียด SQL กลับไปให้ client
 
-- `GET /api/latest`: แถวล่าสุด พร้อม `created_at`
-- `GET /api/history`: ค่าเฉลี่ย 10 นาที สูงสุด 18 ช่วงล่าสุดใน 3 ชั่วโมง พร้อม `bucket_ms` เป็น Unix milliseconds
-- `GET /api/history/daily`: ค่าเฉลี่ยรายวันสูงสุด 30 วัน วันที่อ้างอิง timezone ของ MySQL session
-- Socket.IO event: `sensorData` หลังบันทึกสำเร็จ พร้อม timestamp
+- `GET /api/latest?device_id=ID`: แถวล่าสุด พร้อม `created_at`
+- `GET /api/history?device_id=ID`: ค่าเฉลี่ย 10 นาที สูงสุด 18 ช่วงล่าสุดใน 3 ชั่วโมง พร้อม `bucket_ms` เป็น Unix milliseconds
+- `GET /api/history/daily?device_id=ID`: ค่าเฉลี่ยรายวันสูงสุด 30 วัน วันที่อ้างอิง timezone ของ MySQL session
+- API อ่านข้อมูลต้องมี `Authorization: Bearer <token>` และตรวจเจ้าของ device_id ทุกครั้ง
+- Socket.IO ต้องส่ง `auth.token`; event `sensorData` ส่งให้เจ้าของอุปกรณ์กับผู้ดูแลเท่านั้น พร้อม device_id และ timestamp
 - กราฟสร้างได้แม้ฐานข้อมูลว่าง ใช้ค่าเฉลี่ยจากเซิร์ฟเวอร์และรีเฟรชไม่เกินนาทีละครั้งเมื่อมีข้อมูลสด; NULL แสดงช่องว่าง ไม่ใช่ 0
 - เมื่อไม่มี telemetry 15 วินาที หน้าเว็บแสดง OFFLINE และสถานะพัดลม UNKNOWN ไม่อ้างว่าพัดลมหยุด
 - แจ้งเตือนเมื่อเข้าสู่ช่วงฝุ่นสูงหรือระดับรุนแรงขึ้น; เก็บจำนวนรายวันใน browser และจำกัด log 100 รายการ จำนวนไม่ใช่สถิติรวมทุก browser
-- AQI ใน UI ยังคงสูตรเดิมของต้นแบบ ไม่ใช่ค่า AQI เฉลี่ยตามมาตรฐานที่รับรอง
+- แสดง PM2.5 จริงและเกณฑ์โครงการ ไม่ใช้สูตร AQI ประมาณเดิม; มีธีมสว่าง/มืดร่วมกันทั้ง Login, Dashboard, History และ Admin
+- ประวัติส่งออก CSV ได้ การสลับอุปกรณ์ยกเลิกคำขอเก่าและป้องกันผลตอบกลับล่าช้าทับอุปกรณ์ใหม่
 
-เสิร์ฟเฉพาะไฟล์ใน `public/` อ่าน dashboard/API ได้ภายในเครือข่ายที่เข้าถึงเซิร์ฟเวอร์ได้ รหัสอุปกรณ์ป้องกันการเขียนข้อมูลเท่านั้น ระบบปัจจุบันใช้ HTTP และ UDP discovery สำหรับ LAN ที่เชื่อถือได้ การขึ้น cloud ยังต้องเพิ่ม HTTPS, การตั้งค่า URL และการเข้าถึงที่เหมาะสม ไม่ใช่เปลี่ยน URL อย่างเดียว
+เสิร์ฟเฉพาะไฟล์ใน `public/` หน้าเว็บตรวจ session และ API ตรวจสิทธิ์ฝั่ง server ระบบปัจจุบันใช้ HTTP และ UDP discovery สำหรับ LAN ที่เชื่อถือได้ การขึ้น cloud ยังต้องเพิ่ม HTTPS, การตั้งค่า URL และการเข้าถึงที่เหมาะสม ไม่ใช่เปลี่ยน URL อย่างเดียว
 
 ## โครงสร้าง
 
 - `firmware.ino`: อ่านเซนเซอร์/ควบคุมพัดลม/ส่งข้อมูล
 - `server.js`: API, MySQL, Socket.IO, UDP
-- `public/index.html`, `public/history.html`, `public/style.css`: หน้าเว็บ
-- `db/schema.sql`, `db/migrate-nullable-sensors.sql`: ติดตั้ง/อัปเกรดฐานข้อมูล
+- `public/*.html`, `public/js/`, `public/style.css`: หน้าเว็บและส่วนประกอบร่วม
+- `db/migrate.js`, `db/seed.js`: ปรับฐานข้อมูลและสร้างผู้ดูแล
 - `tests/`: regression tests
 - `images/`: ภาพประกอบเอกสาร
 
 ## ทดสอบ
 
-`npm test` ใช้ Node test runner ทดสอบ validation, HTTP API ด้วย DB จำลอง, การปิดการเข้าถึง source, dashboard ด้วย DOM/Chart จำลอง และ regression ของข้อมูลว่าง/แจ้งเตือน/สถานะ offline ไม่ต้องมีบอร์ดหรือ MySQL เพื่อรันชุดนี้ GitHub Actions รันบน pull request
+`npm test` ตรวจ API/Socket.IO ด้วยฐานข้อมูลจำลอง, ownership, claim พร้อมกัน, public registration, XSS ใน DOM, การสลับอุปกรณ์, migration และ seed นอกจากนี้ compile/run ตัวกรอง C++ ด้วย g++ (ข้ามบนเครื่องที่ไม่มี compiler) การทดสอบ MySQL จริงเปิดด้วย TEST_MYSQL=1 ใน CI และใช้ฐาน airwatch_test แยกต่างหาก
+
+การตรวจ C++ นี้ไม่ใช่การ compile firmware ทั้ง sketch และไม่แทนการทดสอบ ESP32 จริง ดูรายการตรวจรับใน UPGRADE_GUIDE.md
 
 ก่อนใช้กับอุปกรณ์ ให้ทดสอบเพิ่มเติม:
 
@@ -123,3 +153,4 @@ UDP discovery ค้นหา IP และ port ใน LAN หากส่งล
 5. ป้อน key ผิด/หยุด MySQL: firmware ต้องรายงานความล้มเหลว ไม่บอกว่าบันทึกสำเร็จ
 6. เปิดจากมือถือ: ข้อมูลสด ประวัติ และกราฟต้องมาจากเครื่องเซิร์ฟเวอร์
 7. HTTP ยังเป็น synchronous และอาจหน่วงการอ่านเซนเซอร์ระหว่างเครือข่ายล้มเหลว ต้องวัด latency ของการควบคุมบนบอร์ดจริง
+

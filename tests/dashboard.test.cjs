@@ -1,83 +1,142 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-
-function harness() {
-    const elements = {};
-    const storage = {};
-    const handlers = {};
-    let history = [];
-    function element() {
-        return {
-            children: [], innerHTML: 'CONNECTING...',
-            style: { setProperty() {} }, classList: { add() {}, remove() {} },
-            insertBefore(item) { this.children.unshift(item); },
-            get lastElementChild() { return { remove: () => this.children.pop() }; },
-            getContext() { return {}; }
-        };
-    }
-    const document = {
-        getElementById: id => elements[id] ||= element(),
-        querySelector: () => elements.pill ||= element(),
-        createElement: element, body: element(), documentElement: element()
-    };
-    const context = vm.createContext({
-        document, window: {}, console,
-        localStorage: { getItem: key => storage[key] || null, setItem: (key, value) => storage[key] = value },
-        io: () => ({ on: (name, fn) => handlers[name] = fn }),
-        fetch: async url => ({ ok: true, json: async () => url === '/api/latest' ? {} : history }),
-        setTimeout: () => 1, clearTimeout() {}, setInterval() {},
-        Chart: function(ctx, config) { this.data = config.data; this.update = () => {}; }
-    });
-    const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
-    const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
-    vm.runInContext(scripts[scripts.length - 1][1], context);
-    return { elements, handlers, setHistory: rows => history = rows,
-        run: code => vm.runInContext(code, context) };
-}
-
-test('empty history, missing measurements, alert episodes and offline fans', async () => {
-    const h = harness();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(h.run('!!pmChart'), true);
-    assert.equal(h.elements.pill.innerHTML, 'OFFLINE');
-    const data = { in_pm25: 60, out_pm25: null, in_gas: 1000, out_gas: null,
-        in_co2: null, temperature: 0, humidity: 0, vent_fan_status: 1, filt_fan_status: 0 };
-    const update = value => h.run('updateUI(' + JSON.stringify(value) + ')');
-    update(data); update(data);
-    assert.equal(h.run('alertCount'), 1);
-    assert.equal(h.elements.out_pm25.textContent, 'No data');
-    assert.equal(h.elements['temp-val'].textContent, '0.0°C');
-    h.run('setDeviceOffline()');
-    assert.equal(h.elements['tl-vent'].textContent, 'UNKNOWN');
-    assert.equal(h.run('alertCount'), 1);
-    update({ ...data, in_pm25: 0 }); update(data);
-    assert.equal(h.run('alertCount'), 2);
-    h.run('dismissAlert()'); update(data);
-    assert.equal(h.run('alertCount'), 2);
-    update({ ...data, in_pm25: null }); update(data);
-    assert.equal(h.run('alertCount'), 2);
-    for (let i = 0; i < 110; i++) { update({ ...data, in_pm25: 0 }); update(data); }
-    assert.equal(h.elements['notif-items'].children.length, 100);
-
-    h.setHistory([{ bucket_ms: 600000, in_pm25: '42.1', out_pm25: null }]);
-    await h.run('initChart()');
-    assert.equal(h.run('pmChart.data.datasets[0].data[0]'), 42.1);
-    assert.equal(h.run('pmChart.data.datasets[1].data[0]'), null);
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const { JSDOM } = require("jsdom");
+const model = require("../public/js/model");
+const flush = () => new Promise((r) => setImmediate(r));
+test("measurement model preserves zero/null and deduplicates alert episodes", () => {
+  assert.equal(model.number(null), null);
+  assert.equal(model.number(0), 0);
+  assert.equal(model.number("42.1"), 42.1);
+  assert.equal(model.acceptSample(1, { device_id: 2 }), false);
+  assert.equal(model.fresh(new Date(Date.now() - 16000).toISOString()), false);
+  let s = { level: 0, count: 0 };
+  for (const pm of [60, 60, null, 60]) s = model.nextAlert(s, pm);
+  assert.equal(s.count, 1);
+  s = model.nextAlert(s, 0);
+  s = model.nextAlert(s, 60);
+  assert.equal(s.count, 2);
 });
-
-test('a fresh socket event marks the device live', async () => {
-    const h = harness();
-    await new Promise(resolve => setImmediate(resolve));
-    h.handlers.sensorData({ in_pm25: 0, out_pm25: null, in_gas: 0, out_gas: null });
-    assert.match(h.elements.pill.innerHTML, /LIVE/);
+test("actual dashboard ignores other devices and late responses after selection changes", async () => {
+  const dom = new JSDOM(fs.readFileSync("public/index.html", "utf8"), {
+    url: "http://localhost/",
+    runScripts: "outside-only",
+  });
+  const w = dom.window,
+    $ = (id) => w.document.getElementById(id),
+    handlers = {},
+    pending = [];
+  const select = $("device-select");
+  select.replaceChildren(new w.Option("one", "1"), new w.Option("two", "2"));
+  const chart = {
+    data: { labels: [], datasets: [{ data: [] }, { data: [] }] },
+    update() {},
+  };
+  w.AirModel = model;
+  w.io = () => ({ on: (e, fn) => (handlers[e] = fn), disconnect() {} });
+  w.App = {
+    $,
+    ready: Promise.resolve({ id: 1 }),
+    chart: () => chart,
+    selected: () => Number(select.value),
+    syncLinks() {},
+    loadDevices: async () => {},
+    token: () => "",
+    error() {},
+    time: String,
+    api: (url) =>
+      url.startsWith("/api/history")
+        ? Promise.resolve([])
+        : new Promise((resolve) => pending.push({ url, resolve })),
+  };
+  w.eval(fs.readFileSync("public/js/dashboard.js", "utf8"));
+  await flush();
+  const sample = (id) => ({
+    id: 1,
+    device_id: id,
+    in_pm25: id * 10,
+    out_pm25: null,
+    temperature: 0,
+    humidity: 0,
+    in_co2: null,
+    in_gas: 0,
+    vent_fan_status: 0,
+    filt_fan_status: 0,
+    created_at: new Date().toISOString(),
+  });
+  pending[0].resolve(sample(1));
+  await flush();
+  assert.equal($("in-pm").textContent, "10");
+  select.value = "2";
+  select.dispatchEvent(new w.Event("change"));
+  await flush();
+  select.value = "1";
+  select.dispatchEvent(new w.Event("change"));
+  await flush();
+  pending[2].resolve(sample(1));
+  await flush();
+  pending[1].resolve(sample(2));
+  await flush();
+  assert.equal($("in-pm").textContent, "10");
+  handlers.sensorData(sample(2));
+  assert.equal($("in-pm").textContent, "10");
+  handlers.sensorData({ ...sample(1), in_pm25: 0 });
+  assert.equal($("in-pm").textContent, "0");
+  assert.equal($("co2").textContent, "—");
+  handlers.disconnect();
+  assert.equal($("vent").textContent, "ไม่ทราบ");
+  dom.window.close();
 });
-
-test('browser endpoints use the current server', () => {
-    for (const file of ['index.html', 'history.html']) {
-        const html = fs.readFileSync(path.join(__dirname, '../public', file), 'utf8');
-        assert.doesNotMatch(html, /(?:io|fetch)\(['"]http:\/\/localhost/);
-    }
+test("pages share CSS, local scripts and no inline handlers", () => {
+  for (const page of ["index", "history", "admin", "login"]) {
+    const dom = new JSDOM(fs.readFileSync("public/" + page + ".html", "utf8"));
+    const d = dom.window.document;
+    assert.ok(d.querySelector('link[href="/style.css"]'));
+    for (const node of d.querySelectorAll("*"))
+      for (const attr of node.attributes) assert.ok(!/^on/i.test(attr.name));
+    for (const s of d.scripts)
+      assert.ok(s.src, "scripts must be local external files");
+    dom.window.close();
+  }
+});
+test("admin renders stored markup as text and shared dialogs open correctly", async () => {
+  const dom = new JSDOM(fs.readFileSync("public/admin.html", "utf8"), {
+    url: "http://localhost/",
+    runScripts: "outside-only",
+  });
+  const w = dom.window;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  const attack = '<img src=x onerror="alert(1)">';
+  w.localStorage.setItem("airwatch_token", "test-only");
+  w.fetch = async (url) => ({
+    ok: true,
+    json: async () =>
+      url === "/api/auth/me"
+        ? { id: 1, username: attack, role: "admin" }
+        : url === "/api/admin/stats"
+          ? { totalUsers: 1, totalDevices: 1, onlineDevices: 0, totalLogs: 0 }
+          : url === "/api/admin/devices"
+            ? [{ id: 1, device_name: attack, owner_username: attack }]
+            : [{ id: 1, username: attack, email: attack, role: "user" }],
+  });
+  w.eval(fs.readFileSync("public/js/common.js", "utf8"));
+  await w.App.ready;
+  w.eval(fs.readFileSync("public/js/admin.js", "utf8"));
+  await flush();
+  assert.equal(w.document.querySelectorAll("img").length, 0);
+  assert.ok(
+    w.document.getElementById("admin-devices").textContent.includes(attack),
+  );
+  w.document.querySelector("[data-logout]").click();
+  assert.equal(w.document.getElementById("logout-dialog").open, true);
+  w.document.querySelector('[data-close="logout-dialog"]').click();
+  assert.equal(w.document.getElementById("logout-dialog").open, false);
+  w.document.querySelector("[data-theme-toggle]").click();
+  assert.equal(w.document.documentElement.dataset.theme, "light");
+  dom.window.close();
 });
