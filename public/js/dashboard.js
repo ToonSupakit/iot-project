@@ -63,6 +63,8 @@
   function offline(text = "ออฟไลน์") {
     clearTimeout(timer);
     currentData = null;
+    $("in-meter").value = 0;
+    $("out-meter").value = 0;
     status(text, "warn");
     for (const id of [
       "in-pm",
@@ -103,6 +105,8 @@
       out = AirModel.number(d.out_pm25);
     $("in-pm").textContent = pm ?? "—";
     $("out-pm").textContent = out ?? "—";
+    $("in-meter").value = Math.min(100, Math.max(0, pm ?? 0));
+    $("out-meter").value = Math.min(100, Math.max(0, out ?? 0));
     $("pm-status").textContent =
       pm == null
         ? "เซนเซอร์ไม่มีข้อมูล"

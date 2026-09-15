@@ -130,10 +130,13 @@ window.App = (() => {
   function shell() {
     if (!$("sidebar")) return;
     $("sidebar").innerHTML =
-      '<a class="brand" href="/"><span class="brand-mark" data-icon="wind"></span>AirWatch</a><nav class="nav"><a href="/" data-nav="dashboard"><span data-icon="activity"></span>ภาพรวม</a><a href="/history.html" data-nav="history"><span data-icon="history"></span>ประวัติ</a><a href="/admin.html" data-nav="admin" id="admin-nav" hidden><span data-icon="users"></span>ผู้ดูแลระบบ</a></nav><div class="sidebar-foot"><small>ทุกพื้นที่ เริ่มต้นที่อากาศ</small><div class="user"><span class="avatar" id="user-avatar">A</span><div class="user-meta"><div class="user-name" id="user-name">กำลังโหลด…</div><small id="user-role"></small></div></div></div>';
+      '<a class="brand" href="/"><span class="brand-mark" data-icon="wind"></span>AirWatch <small>· smart monitor</small></a><nav class="nav"><a href="/" data-nav="dashboard"><span data-icon="activity"></span>ภาพรวม</a><a href="/history.html" data-nav="history"><span data-icon="history"></span>ประวัติ</a><a href="/admin.html" data-nav="admin" id="admin-nav" hidden><span data-icon="users"></span>ผู้ดูแลระบบ</a></nav><div class="sidebar-foot"><small>ทุกพื้นที่ เริ่มต้นที่อากาศ</small><div class="user"><span class="avatar" id="user-avatar">A</span><div class="user-meta"><div class="user-name" id="user-name">กำลังโหลด…</div><small id="user-role"></small></div></div></div>';
     document
       .querySelector('[data-nav="' + page + '"]')
       ?.setAttribute("aria-current", "page");
+    const accountControls = document.querySelector(".top-actions");
+    if (accountControls) $("sidebar").append(accountControls);
+    document.querySelector(".topline")?.remove();
     $("dialogs").innerHTML =
       `<dialog id="logout-dialog" aria-labelledby="logout-title"><div class="dialog-head"><h2 id="logout-title">ออกจากระบบ?</h2><button class="button icon-button" data-close="logout-dialog" aria-label="ปิด"><span data-icon="close"></span></button></div><p class="dialog-copy">อุปกรณ์ยังทำงานตามปกติ คุณกลับมาเข้าสู่ระบบเพื่อดูข้อมูลได้เสมอ</p><div class="dialog-actions"><button class="button" data-close="logout-dialog">อยู่ต่อ</button><button class="button primary" id="confirm-logout">ออกจากระบบ</button></div></dialog>
         <dialog id="device-dialog" aria-labelledby="device-title"><div class="dialog-head"><h2 id="device-title">เชื่อมต่อพื้นที่ใหม่</h2><button class="button icon-button" data-close="device-dialog" aria-label="ปิด"><span data-icon="close"></span></button></div><p class="dialog-copy">เพิ่มอุปกรณ์ใหม่ หรือผูกอุปกรณ์เดิมที่ยังไม่มีเจ้าของ</p><div class="segmented" role="tablist" aria-label="วิธีเพิ่มอุปกรณ์"><button type="button" id="mode-create" role="tab" aria-selected="true">สร้างอุปกรณ์ใหม่</button><button type="button" id="mode-claim" role="tab" aria-selected="false">ผูกอุปกรณ์เดิม</button></div><div class="banner error" id="device-error" role="alert" hidden></div><form class="form" id="device-form"><div class="field"><label for="device-name">ชื่อพื้นที่ / อุปกรณ์</label><input id="device-name" maxlength="100" placeholder="เช่น ห้องนั่งเล่น" required></div><div class="field" id="claim-field" hidden><label for="claim-key">รหัสอุปกรณ์เดิม</label><input id="claim-key" class="key-output" minlength="16" maxlength="64" autocomplete="off" spellcheck="false"></div><div class="dialog-actions"><button type="button" class="button" data-close="device-dialog">ยกเลิก</button><button class="button primary" id="save-device" type="submit">สร้างและรับรหัส</button></div></form></dialog>
@@ -296,8 +299,8 @@ window.App = (() => {
           {
             label: "ภายใน",
             data: [],
-            borderColor: "#b6dc86",
-            backgroundColor: "#b6dc8660",
+            borderColor: "#3fb950",
+            backgroundColor: "#3fb95030",
             borderWidth: 2,
             pointRadius: 2,
             tension: 0.3,
@@ -306,8 +309,8 @@ window.App = (() => {
           {
             label: "ภายนอก",
             data: [],
-            borderColor: "#7aafa9",
-            backgroundColor: "#7aafa960",
+            borderColor: "#58a6ff",
+            backgroundColor: "#58a6ff30",
             borderWidth: 2,
             pointRadius: 2,
             tension: 0.3,

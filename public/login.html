@@ -7,39 +7,30 @@
     <title>เข้าสู่ระบบ · AirWatch</title>
     <link rel="stylesheet" href="/style.css" />
     <script src="/js/theme.js"></script>
-    <script defer src="/js/common.js"></script>
-    <script defer src="/js/login.js"></script>
+    <script defer="" src="/js/common.js"></script>
+    <script defer="" src="/js/login.js"></script>
   </head>
   <body class="auth-body" data-page="login">
-    <section class="auth-story">
-      <a href="/" class="brand"
-        ><span class="brand-mark" data-icon="wind"></span>AirWatch</a
-      >
-      <h1>รู้จักอากาศ<br />ในพื้นที่ของคุณ<br /><span>ให้ดีกว่าเดิม.</span></h1>
-      <p>
-        เชื่อมต่ออุปกรณ์ ติดตามคุณภาพอากาศ
-        และดูการเปลี่ยนแปลงที่สำคัญจากที่เดียว
-      </p>
-      <div class="air-art" aria-hidden="true">
-        <div class="art-core" data-icon="wind"></div>
-      </div>
-      <footer>YOUR SPACE. YOUR AIR. / AIRWATCH</footer>
-    </section>
+    <div class="auth-glow" aria-hidden="true"></div>
+
     <main class="auth-form-area">
       <button
-        data-theme-toggle
+        data-theme-toggle=""
         class="button icon-button auth-theme"
         aria-label="สลับโหมดสี"
       >
         <span data-icon="sun"></span>
       </button>
       <div class="auth-box">
+        <a href="/" class="brand"
+          ><span class="brand-mark" data-icon="wind"></span>AirWatch</a
+        >
         <p class="eyebrow">WELCOME TO AIRWATCH</p>
         <h2 id="auth-title">ยินดีต้อนรับกลับ</h2>
         <p id="auth-subtitle">เข้าสู่ระบบเพื่อดูพื้นที่และอุปกรณ์ของคุณ</p>
-        <div class="banner error" id="auth-error" role="alert" hidden></div>
+        <div class="banner error" id="auth-error" role="alert" hidden=""></div>
         <form id="auth-form" class="form">
-          <div class="field" id="username-field" hidden>
+          <div class="field" id="username-field" hidden="">
             <label for="username">ชื่อผู้ใช้</label
             ><input
               id="username"
@@ -59,7 +50,7 @@
               autocomplete="email"
               maxlength="100"
               placeholder="you@example.com"
-              required
+              required=""
             />
           </div>
           <div class="field">
@@ -70,16 +61,16 @@
                 name="password"
                 type="password"
                 autocomplete="current-password"
-                required
+                required=""
               /><button id="show-password" type="button" aria-pressed="false">
                 แสดง
               </button>
             </div>
-            <small id="password-hint" hidden
+            <small id="password-hint" hidden=""
               >อย่างน้อย 12 ตัวอักษร ไม่เกิน 72 ไบต์</small
             >
           </div>
-          <div class="field" id="confirm-field" hidden>
+          <div class="field" id="confirm-field" hidden="">
             <label for="confirm-password">ยืนยันรหัสผ่าน</label
             ><input
               id="confirm-password"

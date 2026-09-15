@@ -7,14 +7,14 @@
     <title>ประวัติ · AirWatch</title>
     <link rel="stylesheet" href="/style.css" />
     <script src="/js/theme.js"></script>
-    <script defer src="/vendor/chart.umd.js"></script>
-    <script defer src="/js/model.js"></script>
-    <script defer src="/js/common.js"></script>
-    <script defer src="/js/history.js"></script>
+    <script defer="" src="/vendor/chart.umd.js"></script>
+    <script defer="" src="/js/model.js"></script>
+    <script defer="" src="/js/common.js"></script>
+    <script defer="" src="/js/history.js"></script>
   </head>
   <body data-page="history">
     <a class="sr-only" href="#main">ข้ามไปเนื้อหา</a>
-    <aside class="sidebar" id="sidebar" aria-label="เมนูหลัก"></aside>
+    <header id="sidebar" class="classic-topbar" aria-label="เมนูหลัก"></header>
     <main class="main" id="main">
       <header class="topline">
         <span class="breadcrumb">WORKSPACE / HISTORY</span>
@@ -22,11 +22,11 @@
           <span class="user-short muted" id="top-user"></span
           ><button
             class="button icon-button"
-            data-theme-toggle
+            data-theme-toggle=""
             aria-label="สลับโหมดสี"
           >
             <span data-icon="sun"></span></button
-          ><button class="button quiet small" data-logout>ออกจากระบบ</button>
+          ><button class="button quiet small" data-logout="">ออกจากระบบ</button>
         </div>
       </header>
       <section class="page-heading">
@@ -37,11 +37,11 @@
         </div>
         <div class="actions"></div>
       </section>
-      <div id="page-error" role="alert" class="banner error" hidden></div>
+      <div id="page-error" role="alert" class="banner error" hidden=""></div>
       <section class="toolbar" aria-label="เลือกอุปกรณ์">
         <div class="device-field">
           <label for="device-select">พื้นที่ / อุปกรณ์</label
-          ><select id="device-select" disabled>
+          ><select id="device-select" disabled="">
             <option>กำลังโหลดอุปกรณ์…</option>
           </select>
         </div>
@@ -51,15 +51,15 @@
           </button>
         </div>
       </section>
-      <section class="empty" id="no-devices" hidden>
+      <section class="empty" id="no-devices" hidden="">
         <span data-icon="device"></span>
         <h2>เพิ่มอุปกรณ์แรกของคุณ</h2>
         <p>
           ตั้งชื่อพื้นที่ รับรหัสอุปกรณ์ แล้วนำไปกรอกใน AirWatch-Setup บนบอร์ด
         </p>
-        <button class="button primary" data-add-device>เพิ่มอุปกรณ์</button>
+        <button class="button primary" data-add-device="">เพิ่มอุปกรณ์</button>
       </section>
-      <div id="device-content" hidden>
+      <div id="device-content" hidden="">
         <section class="panel">
           <header class="panel-heading">
             <div>
@@ -85,7 +85,7 @@
                 วันที่อ้างอิงเวลาของเซิร์ฟเวอร์ฐานข้อมูล · — หมายถึงไม่มีข้อมูล
               </p>
             </div>
-            <button id="export-csv" class="button small" disabled>
+            <button id="export-csv" class="button small" disabled="">
               ดาวน์โหลด CSV
             </button>
           </header>
@@ -111,6 +111,6 @@
       </footer>
     </main>
     <div id="dialogs"></div>
-    <div class="toast" id="toast" role="status" hidden></div>
+    <div class="toast" id="toast" role="status" hidden=""></div>
   </body>
 </html>
