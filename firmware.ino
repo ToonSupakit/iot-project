@@ -11,7 +11,7 @@
   // 🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑🛑
   //
   // วิธีใช้งานในอนาคต:
-  // ตอนนี้คุณมีพัดลมตัวเดียว และเซนเซอร์ชุดเดียว สวิตช์นี้จึงปิด (false) อยู่
+  // ค่าเริ่มต้นเปิดโหมดสองพัดลมและเซนเซอร์นอกบ้าน (true)
   //
   // 👉 หากวันไหนคุณซื้อของมาติดครบแล้ว ให้แก้คำว่า "false" เป็น "true"
   // 👉 จากนั้นกด อัปโหลด (Upload) โค้ดลงบอร์ด ESP32 ใหม่ 
@@ -35,6 +35,10 @@
   #include <Preferences.h>      // ไลบรารีสำหรับบันทึกค่า Server IP ลงความจำถาวรของ ESP32
   #include <esp_idf_version.h>
   #include <math.h>
+  #include "sensor_processing.h"
+  #include <freertos/FreeRTOS.h>
+  #include <freertos/queue.h>
+  #include <freertos/task.h>
   #include <esp_task_wdt.h>     // ★ ไลบรารี Watchdog Timer ป้องกัน ESP32 ค้าง จะรีสตาร์ทอัตโนมัติ
 
   // =====================================================================
@@ -135,6 +139,11 @@
   unsigned long lastPmOutReadTime = 0; 
   unsigned long lastPmsRequest = 0;    
 
+  SensorEma pmFilter, pmOutFilter, gasFilter, gasOutFilter;
+  int rawPmValue = -1, rawPmOutValue = -1;
+  bool pmInRange = false, pmOutInRange = false;
+  unsigned long lastDiagnostic = 0;
+  uint8_t ensValidity = 3;
   int currentPmValue = 0;              // ค่าฝุ่นในบ้าน
   int currentPmOutValue = 0;           // ค่าฝุ่นนอกบ้าน
 
@@ -176,6 +185,41 @@
     }
     i2cErrorCount = 0;
     Serial.println("✅ I2C Bus Recovered!");
+  }
+
+  struct TelemetryPacket { char json[256]; unsigned long sampledAt; };
+  QueueHandle_t telemetryQueue = nullptr;
+  void telemetryWorker(void*) {
+    TelemetryPacket packet;
+    for (;;) {
+      if (xQueueReceive(telemetryQueue, &packet, portMAX_DELAY) != pdTRUE) continue;
+      if (WiFi.status() != WL_CONNECTED || millis() - packet.sampledAt > 10000) continue;
+        HTTPClient http;
+        http.begin(serverUrl);
+        http.addHeader("Content-Type", "application/json");
+        http.addHeader("X-Device-Key", deviceKey);
+        http.setConnectTimeout(HTTP_TIMEOUT);
+        http.setTimeout(HTTP_TIMEOUT);
+        int httpCode = http.POST(packet.json);
+        http.end();
+        if (httpCode >= 200 && httpCode < 300) {
+          httpFailures = 0;
+          Serial.println("Telemetry saved");
+        } else {
+          if (httpFailures < 3) httpFailures++;
+          Serial.printf("Telemetry failed: HTTP %d\n", httpCode);
+          if (httpCode == 401) Serial.println("Device API key does not match server configuration");
+          // Back off discovery; do not repeatedly discover on payload/auth errors.
+          if (httpFailures >= 3 && (httpCode < 0 || httpCode >= 500) &&
+              millis() - lastDiscoveryAttempt >= 30000) {
+            serverDiscovered = false;
+            lastDiscoveryAttempt = millis();
+            discoverServerIP();
+          }
+        }
+      // Yield even when a request fails immediately.
+      vTaskDelay(pdMS_TO_TICKS(20));
+    }
   }
 
   // ฟังก์ชันควบคุมพัดลมระบายอากาศ (Active-Low: สั่ง LOW = เปิด, HIGH = ปิด)
@@ -282,6 +326,14 @@
   #endif
     // Start warm-up after setup, so time spent in the portal cannot consume it.
     bootTime = millis();
+    telemetryQueue = xQueueCreate(1, sizeof(TelemetryPacket));
+    if (!telemetryQueue) {
+      Serial.println("ERROR: telemetry queue allocation failed; local control remains active");
+    } else if (xTaskCreate(telemetryWorker, "telemetry", 8192, nullptr, 1, nullptr) != pdPASS) {
+      vQueueDelete(telemetryQueue);
+      telemetryQueue = nullptr;
+      Serial.println("ERROR: telemetry task creation failed; local control remains active");
+    }
   #if ESP_IDF_VERSION_MAJOR >= 5
     esp_task_wdt_config_t config = {};
     config.timeout_ms = WDT_TIMEOUT * 1000;
@@ -310,36 +362,25 @@
     // =================================================================
     // รับข้อมูลฝุ่นในบ้าน
     if (pms.read(data)) {
-      int rawPm = data.PM_AE_UG_2_5;
-      if (rawPm > PM_MAX_CAP) rawPm = PM_MAX_CAP;  // Cap ค่าสูงสุดป้องกันเพี้ยน
-      
-      // ★ ตัวกรองสัญญาณ EMA (Exponential Moving Average) ป้องกันค่ากระโดดเด้งมั่ว
-      if (currentPmValue == 0 || lastPmReadTime == 0) {
-        currentPmValue = rawPm;
-      } else {
-        currentPmValue = (int)((currentPmValue * 0.75) + (rawPm * 0.25));
-      }
+      rawPmValue = data.PM_AE_UG_2_5;
+      pmInRange = rawPmValue <= PM_MAX_CAP;
+      currentPmValue = lroundf(pmFilter.update(rawPmValue, millis(), PM_TIMEOUT, 0.25f));
       lastPmReadTime = millis();
     }
 
     // Keep the last measurement separate from whether it is still usable.
-    pmValid = lastPmReadTime > 0 && millis() - lastPmReadTime <= PM_TIMEOUT;
+    pmValid = pmFilter.fresh(millis(), PM_TIMEOUT);
 
     // รับข้อมูลฝุ่นนอกบ้าน
   #if HAS_OUTDOOR_SENSORS
     if (pmsOut.read(dataOut)) {
-      int rawPmOut = dataOut.PM_AE_UG_2_5;
-      if (rawPmOut > PM_MAX_CAP) rawPmOut = PM_MAX_CAP;  // Cap ค่าสูงสุด
-      
-      if (currentPmOutValue == 0 || lastPmOutReadTime == 0) {
-        currentPmOutValue = rawPmOut;
-      } else {
-        currentPmOutValue = (int)((currentPmOutValue * 0.75) + (rawPmOut * 0.25));
-      }
+      rawPmOutValue = dataOut.PM_AE_UG_2_5;
+      pmOutInRange = rawPmOutValue <= PM_MAX_CAP;
+      currentPmOutValue = lroundf(pmOutFilter.update(rawPmOutValue, millis(), PM_TIMEOUT, 0.25f));
       lastPmOutReadTime = millis();
     }
 
-    pmOutValid = lastPmOutReadTime > 0 && millis() - lastPmOutReadTime <= PM_TIMEOUT;
+    pmOutValid = pmOutFilter.fresh(millis(), PM_TIMEOUT);
   #endif
 
     // =================================================================
@@ -366,8 +407,8 @@
             lastFanSwitch = millis();
           }
         }
-        else if (!pmOutValid && isVentOn) {
-          // Even within the hysteresis band, do not keep using an unknown intake.
+        else if (mustCloseIntake(isVentOn, pmOutValid, currentPmValue, currentPmOutValue)) {
+          // Close an unknown or dirtier intake even inside the 30-35 hysteresis band.
           setVentFan(false);
           setFiltFan(true);
           lastFanSwitch = millis();
@@ -429,7 +470,7 @@
       // อ่าน AHT10
       sensors_event_t h_ev, t_ev;  
       ahtValid = ahtOnline && aht.getEvent(&h_ev, &t_ev) &&
-          isfinite(t_ev.temperature) && isfinite(h_ev.relative_humidity);
+          validClimate(t_ev.temperature, h_ev.relative_humidity);
       if (ahtValid) {
         lastTemp = t_ev.temperature;       
         lastHum = h_ev.relative_humidity;
@@ -451,11 +492,15 @@
           ens160.setRHCompensationFloat(lastHum);
         }
 
+        ensValidity = ens160.getFlags();
+        if (ensValidity != 0) lastCo2ReadTime = 0;
         if (ens160.checkDataStatus()) {
           uint16_t eco2 = ens160.getECO2();
-          if (eco2 >= 400) {
+          if (ensValidity == 0 && eco2 >= 400 && eco2 <= 65000) {
             lastCo2 = eco2;
             lastCo2ReadTime = millis();
+          } else {
+            lastCo2ReadTime = 0;
           }
         }
         ens160.getTVOC();
@@ -472,11 +517,7 @@
         delayMicroseconds(150);
       }
       int rawGas = gasSum / 20;
-      if (lastGas == 0) {
-        lastGas = rawGas;
-      } else {
-        lastGas = (int)((lastGas * 0.8) + (rawGas * 0.2));
-      }
+      lastGas = lroundf(gasFilter.update(rawGas, millis(), PM_TIMEOUT, 0.2f));
   #if HAS_OUTDOOR_SENSORS
       long gasOutSum = 0;
       for (int i = 0; i < 20; i++) {
@@ -484,14 +525,20 @@
         delayMicroseconds(150);
       }
       int rawGasOut = gasOutSum / 20;
-      if (lastGasOut == 0) {
-        lastGasOut = rawGasOut;
-      } else {
-        lastGasOut = (int)((lastGasOut * 0.8) + (rawGasOut * 0.2));
-      }
+      lastGasOut = lroundf(gasOutFilter.update(rawGasOut, millis(), PM_TIMEOUT, 0.2f));
   #else
       lastGasOut = 0; // บังคับเป็น 0 ถ้ายังไม่มีเซนเซอร์ ป้องกันค่ากวน
   #endif
+    }
+
+    // Diagnostics retain raw values, including out-of-range data, without changing calibration.
+    if (millis() - lastDiagnostic >= 5000) {
+      lastDiagnostic = millis();
+      Serial.printf("PMS IN raw=%d filtered=%d fresh=%d inRange=%d ageMs=%lu | OUT raw=%d filtered=%d fresh=%d inRange=%d ageMs=%lu\n",
+        rawPmValue, currentPmValue, pmValid, pmInRange, millis()-lastPmReadTime,
+        rawPmOutValue, currentPmOutValue, pmOutValid, pmOutInRange, millis()-lastPmOutReadTime);
+      Serial.printf("ENS validity=%u eCO2=%d | AHT valid=%d temp=%.2f RH=%.2f | MQ IN=%d OUT=%d\n",
+        ensValidity, lastCo2, ahtValid, lastTemp, lastHum, lastGas, lastGasOut);
     }
 
     // =================================================================
@@ -507,8 +554,8 @@
           return;
         }
         char inPmText[16], outPmText[16], co2Text[16], tempText[24], humText[24], outGasText[16];
-        snprintf(inPmText, sizeof(inPmText), pmValid ? "%d" : "null", currentPmValue);
-        snprintf(outPmText, sizeof(outPmText), pmOutValid ? "%d" : "null", currentPmOutValue);
+        snprintf(inPmText, sizeof(inPmText), (pmValid && pmInRange && currentPmValue <= PM_MAX_CAP) ? "%d" : "null", currentPmValue);
+        snprintf(outPmText, sizeof(outPmText), (pmOutValid && pmOutInRange && currentPmOutValue <= PM_MAX_CAP) ? "%d" : "null", currentPmOutValue);
         bool co2Valid = lastCo2ReadTime > 0 && millis() - lastCo2ReadTime <= PM_TIMEOUT;
         snprintf(co2Text, sizeof(co2Text), co2Valid ? "%d" : "null", lastCo2);
         snprintf(tempText, sizeof(tempText), ahtValid ? "%.2f" : "null", lastTemp);
@@ -523,29 +570,11 @@
           Serial.println("Telemetry serialization failed");
           return;
         }
-        HTTPClient http;
-        http.begin(serverUrl);
-        http.addHeader("Content-Type", "application/json");
-        http.addHeader("X-Device-Key", deviceKey);
-        http.setConnectTimeout(HTTP_TIMEOUT);
-        http.setTimeout(HTTP_TIMEOUT);
-        int httpCode = http.POST(jsonBuffer);
-        http.end();
-        if (httpCode >= 200 && httpCode < 300) {
-          httpFailures = 0;
-          Serial.println("Telemetry saved");
-        } else {
-          if (httpFailures < 3) httpFailures++;
-          Serial.printf("Telemetry failed: HTTP %d\n", httpCode);
-          if (httpCode == 401) Serial.println("Device API key does not match server configuration");
-          // Back off discovery; do not repeatedly discover on payload/auth errors.
-          if (httpFailures >= 3 && (httpCode < 0 || httpCode >= 500) &&
-              millis() - lastDiscoveryAttempt >= 30000) {
-            serverDiscovered = false;
-            lastDiscoveryAttempt = millis();
-            discoverServerIP();
-          }
-        }
+        TelemetryPacket packet = {};
+        memcpy(packet.json, jsonBuffer, length + 1);
+        packet.sampledAt = millis();
+        if (telemetryQueue) xQueueOverwrite(telemetryQueue, &packet);
+
       } else {
         // หาก WiFi หลุด ให้พยายามต่อใหม่ทุก 10 วินาทีแบบ Non-blocking
         if (wifiLostSince == 0) wifiLostSince = millis();  // ★ จดเวลาที่ WiFi เริ่มหลุด
