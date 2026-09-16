@@ -60,3 +60,22 @@ jobs:
         run: docker build -t airwatch-test .
       - name: Validate reverse proxy configuration
         run: docker run --rm -e DOMAIN=airwatch.example.com -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Start isolated deployment and verify automatic setup
+        run: |
+          python3 - <<'PY'
+          import base64, pathlib
+          values = dict(DOMAIN='airwatch.example.com', DB_HOST='db', DB_NAME='smart_air_db', DB_USER='airwatch', DB_PASSWORD='smoke-database-password', MYSQL_ROOT_PASSWORD='smoke-root-password', JWT_SECRET='smoke-only-secret-at-least-32-characters-long', ADMIN_USERNAME='smoke-admin', ADMIN_EMAIL='smoke@example.invalid', ADMIN_PASSWORD_B64=base64.b64encode(b'smoke-private-password').decode())
+          pathlib.Path('.env.cloud').write_text('\n'.join(k+'='+v for k,v in values.items())+'\n')
+          pathlib.Path('/tmp/airwatch-ci.yaml').write_text('services:\n  app:\n    ports: ["127.0.0.1:3000:3000"]\n')
+          PY
+          docker compose --env-file .env.cloud -f compose.yaml -f /tmp/airwatch-ci.yaml up -d --build --wait app
+          node scripts/smoke.cjs
+          docker compose --env-file .env.cloud -f compose.yaml -f /tmp/airwatch-ci.yaml restart app
+          docker compose --env-file .env.cloud -f compose.yaml -f /tmp/airwatch-ci.yaml up -d --wait app
+          node scripts/smoke.cjs
+      - name: Stop isolated stack
+        if: always()
+        run: docker compose --env-file .env.cloud -f compose.yaml -f /tmp/airwatch-ci.yaml down -v
