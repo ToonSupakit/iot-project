@@ -1,11 +1,9 @@
-<!doctype html>
-<html lang="th">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="color-scheme" content="dark light" />
+<!DOCTYPE html><html lang="th"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="dark light">
     <title>ประวัติ · AirWatch</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/style.css">
     <script src="/js/theme.js"></script>
     <script defer="" src="/vendor/chart.umd.js"></script>
     <script defer="" src="/js/model.js"></script>
@@ -19,14 +17,8 @@
       <header class="topline">
         <span class="breadcrumb">WORKSPACE / HISTORY</span>
         <div class="top-actions">
-          <span class="user-short muted" id="top-user"></span
-          ><button
-            class="button icon-button"
-            data-theme-toggle=""
-            aria-label="สลับโหมดสี"
-          >
-            <span data-icon="sun"></span></button
-          ><button class="button quiet small" data-logout="">ออกจากระบบ</button>
+          <span class="user-short muted" id="top-user"></span><button class="button icon-button" data-theme-toggle="" aria-label="สลับโหมดสี">
+            <span data-icon="sun"></span></button><button class="button quiet small" data-logout="">ออกจากระบบ</button>
         </div>
       </header>
       <section class="page-heading">
@@ -39,26 +31,14 @@
       </section>
       <div id="page-error" role="alert" class="banner error" hidden=""></div>
       <section class="toolbar" aria-label="เลือกอุปกรณ์">
-        <div class="device-field">
-          <label for="device-select">พื้นที่ / อุปกรณ์</label
-          ><select id="device-select" disabled="">
-            <option>กำลังโหลดอุปกรณ์…</option>
-          </select>
-        </div>
+        <div class="device-field"><span id="board-name">AirWatch ESP32</span></div>
         <div class="actions">
           <button id="refresh" class="button small">
             <span data-icon="refresh"></span>รีเฟรช
           </button>
         </div>
       </section>
-      <section class="empty" id="no-devices" hidden="">
-        <span data-icon="device"></span>
-        <h2>เพิ่มอุปกรณ์แรกของคุณ</h2>
-        <p>
-          ตั้งชื่อพื้นที่ รับรหัสอุปกรณ์ แล้วนำไปกรอกใน AirWatch-Setup บนบอร์ด
-        </p>
-        <button class="button primary" data-add-device="">เพิ่มอุปกรณ์</button>
-      </section>
+      <section class="empty" id="no-devices" hidden=""><h2>กำลังเชื่อมต่อบอร์ด</h2><p>รอข้อมูลจาก ESP32 ของโปรเจกต์</p></section>
       <div id="device-content" hidden="">
         <section class="panel">
           <header class="panel-heading">
@@ -69,11 +49,7 @@
             <div class="legend"><span>ภายใน</span><span>ภายนอก</span></div>
           </header>
           <div class="chart-wrap tall">
-            <canvas
-              id="history-chart"
-              role="img"
-              aria-label="กราฟค่าเฉลี่ย PM2.5 รายวัน"
-            ></canvas>
+            <canvas id="history-chart" role="img" aria-label="กราฟค่าเฉลี่ย PM2.5 รายวัน"></canvas>
           </div>
           <p id="history-note" class="chart-caption">กำลังโหลด…</p>
         </section>
@@ -106,11 +82,11 @@
         </section>
       </div>
       <footer class="footer-note">
-        <span>AirWatch / ทุกพื้นที่ เริ่มต้นที่อากาศ</span
-        ><span>ข้อมูลจากเซนเซอร์ · เกณฑ์ทดลองของโครงการ</span>
+        <span>AirWatch / ทุกพื้นที่ เริ่มต้นที่อากาศ</span><span>ข้อมูลจากเซนเซอร์ · เกณฑ์ทดลองของโครงการ</span>
       </footer>
     </main>
     <div id="dialogs"></div>
     <div class="toast" id="toast" role="status" hidden=""></div>
-  </body>
-</html>
+
+
+</body></html>

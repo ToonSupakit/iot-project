@@ -17,7 +17,7 @@ test("measurement model preserves zero/null and deduplicates alert episodes", ()
   s = model.nextAlert(s, 60);
   assert.equal(s.count, 2);
 });
-test("actual dashboard ignores other devices and late responses after selection changes", async () => {
+test("single-board dashboard ignores unrelated telemetry and late refresh results", async () => {
   const dom = new JSDOM(fs.readFileSync("public/index.html", "utf8"), {
     url: "http://localhost/",
     runScripts: "outside-only",
@@ -26,8 +26,6 @@ test("actual dashboard ignores other devices and late responses after selection 
     $ = (id) => w.document.getElementById(id),
     handlers = {},
     pending = [];
-  const select = $("device-select");
-  select.replaceChildren(new w.Option("one", "1"), new w.Option("two", "2"));
   const chart = {
     data: { labels: [], datasets: [{ data: [] }, { data: [] }] },
     update() {},
@@ -38,7 +36,7 @@ test("actual dashboard ignores other devices and late responses after selection 
     $,
     ready: Promise.resolve({ id: 1 }),
     chart: () => chart,
-    selected: () => Number(select.value),
+    selected: () => 1,
     syncLinks() {},
     loadDevices: async () => {},
     token: () => "",
@@ -67,19 +65,14 @@ test("actual dashboard ignores other devices and late responses after selection 
   pending[0].resolve(sample(1));
   await flush();
   assert.equal($("in-pm").textContent, "10");
-  select.value = "2";
-  select.dispatchEvent(new w.Event("change"));
+  handlers.connect();
   await flush();
-  select.value = "1";
-  select.dispatchEvent(new w.Event("change"));
+  handlers.sensorData({...sample(1),in_pm25:28});
+  pending[1].resolve(sample(1));
   await flush();
-  pending[2].resolve(sample(1));
-  await flush();
-  pending[1].resolve(sample(2));
-  await flush();
-  assert.equal($("in-pm").textContent, "10");
+  assert.equal($('in-pm').textContent,'28');
   handlers.sensorData(sample(2));
-  assert.equal($("in-pm").textContent, "10");
+  assert.equal($("in-pm").textContent, "28");
   handlers.sensorData({ ...sample(1), in_pm25: 0 });
   assert.equal($("in-pm").textContent, "0");
   assert.equal($("co2").textContent, "—");
@@ -92,6 +85,7 @@ test("pages share CSS, local scripts and no inline handlers", () => {
     const dom = new JSDOM(fs.readFileSync("public/" + page + ".html", "utf8"));
     const d = dom.window.document;
     assert.ok(d.querySelector('link[href="/style.css"]'));
+    assert.equal(d.querySelectorAll("[data-add-device],#device-select").length,0);
     for (const node of d.querySelectorAll("*"))
       for (const attr of node.attributes) assert.ok(!/^on/i.test(attr.name));
     for (const s of d.scripts)

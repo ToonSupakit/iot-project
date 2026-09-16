@@ -236,7 +236,6 @@
       }
     }
   }
-  $("device-select").addEventListener("change", selectDevice);
   window.addEventListener("airwatch-device", selectDevice);
   $("refresh").addEventListener("click", async () => {
     const b = $("refresh");
@@ -261,7 +260,7 @@
     await selectDevice();
   } catch (err) {
     App.error(err.message);
-    $("device-select").replaceChildren(new Option("โหลดอุปกรณ์ไม่สำเร็จ", ""));
+
     return;
   }
   socket = io({ auth: { token: App.token() } });

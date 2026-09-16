@@ -1,11 +1,9 @@
-<!doctype html>
-<html lang="th">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="color-scheme" content="dark light" />
+<!DOCTYPE html><html lang="th"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="dark light">
     <title>ภาพรวม · AirWatch</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/style.css">
     <script src="/js/theme.js"></script>
     <script defer="" src="/socket.io/socket.io.js"></script>
     <script defer="" src="/vendor/chart.umd.js"></script>
@@ -20,59 +18,33 @@
       <header class="topline">
         <span class="breadcrumb">WORKSPACE / DASHBOARD</span>
         <div class="top-actions">
-          <span class="user-short muted" id="top-user"></span
-          ><button
-            class="button icon-button"
-            data-theme-toggle=""
-            aria-label="สลับโหมดสี"
-          >
-            <span data-icon="sun"></span></button
-          ><button class="button quiet small" data-logout="">ออกจากระบบ</button>
+          <span class="user-short muted" id="top-user"></span><button class="button icon-button" data-theme-toggle="" aria-label="สลับโหมดสี">
+            <span data-icon="sun"></span></button><button class="button quiet small" data-logout="">ออกจากระบบ</button>
         </div>
       </header>
       <section class="page-heading">
         <div>
           <p class="eyebrow">AIRWATCH · DASHBOARD</p>
           <h1>ภาพรวมคุณภาพอากาศ</h1>
-          <p>ติดตามอากาศในพื้นที่ของคุณ พร้อมสถานะอุปกรณ์แบบเรียลไทม์</p>
+          <p>ติดตามคุณภาพอากาศและสถานะบอร์ด ESP32 แบบเรียลไทม์</p>
         </div>
         <div class="actions">
-          <button class="button primary" data-add-device="">
-            <span data-icon="plus"></span>เพิ่มอุปกรณ์
-          </button>
+
         </div>
       </section>
       <div id="page-error" role="alert" class="banner error" hidden=""></div>
       <section class="toolbar" aria-label="เลือกอุปกรณ์">
-        <div class="device-field">
-          <label for="device-select">พื้นที่ / อุปกรณ์</label
-          ><select id="device-select" disabled="">
-            <option>กำลังโหลดอุปกรณ์…</option>
-          </select>
-        </div>
+        <div class="device-field"><span id="board-name">AirWatch ESP32</span></div>
         <div class="actions">
-          <button id="device-key" class="button quiet small" disabled="">
-            <span data-icon="key"></span>รหัสอุปกรณ์</button
-          ><button id="refresh" class="button small">
+          <button id="device-key" class="button quiet small" disabled="" hidden="">
+            <span data-icon="key"></span>รหัสอุปกรณ์</button><button id="refresh" class="button small">
             <span data-icon="refresh"></span>รีเฟรช
           </button>
         </div>
       </section>
-      <section class="empty" id="no-devices" hidden="">
-        <span data-icon="device"></span>
-        <h2>เพิ่มอุปกรณ์แรกของคุณ</h2>
-        <p>
-          ตั้งชื่อพื้นที่ รับรหัสอุปกรณ์ แล้วนำไปกรอกใน AirWatch-Setup บนบอร์ด
-        </p>
-        <button class="button primary" data-add-device="">เพิ่มอุปกรณ์</button>
-      </section>
+      <section class="empty" id="no-devices" hidden=""><h2>กำลังเชื่อมต่อบอร์ด</h2><p>รอข้อมูลจาก ESP32 ของโปรเจกต์</p></section>
       <div id="device-content" hidden="">
-        <div
-          class="banner warning"
-          id="pollution-banner"
-          role="status"
-          hidden=""
-        ></div>
+        <div class="banner warning" id="pollution-banner" role="status" hidden=""></div>
         <div class="air-grid">
           <article class="panel air-card primary-card">
             <div class="air-head">
@@ -85,17 +57,9 @@
             <div class="air-number">
               <span id="in-pm">—</span> <small>µg/m³</small>
             </div>
-            <meter
-              class="pm-meter"
-              id="in-meter"
-              min="0"
-              max="100"
-              value="0"
-              aria-label="ระดับ PM2.5 ภายใน"
-            ></meter>
+            <meter class="pm-meter" id="in-meter" min="0" max="100" value="0" aria-label="ระดับ PM2.5 ภายใน"></meter>
             <div class="air-foot">
-              <span>PM2.5 · ฝุ่นละอองขนาดเล็ก</span
-              ><span id="pm-status">ยังไม่มีข้อมูล</span>
+              <span>PM2.5 · ฝุ่นละอองขนาดเล็ก</span><span id="pm-status">ยังไม่มีข้อมูล</span>
             </div>
           </article>
           <article class="panel air-card">
@@ -109,17 +73,9 @@
             <div class="air-number">
               <span id="out-pm">—</span> <small>µg/m³</small>
             </div>
-            <meter
-              class="pm-meter"
-              id="out-meter"
-              min="0"
-              max="100"
-              value="0"
-              aria-label="ระดับ PM2.5 ภายนอก"
-            ></meter>
+            <meter class="pm-meter" id="out-meter" min="0" max="100" value="0" aria-label="ระดับ PM2.5 ภายนอก"></meter>
             <div class="air-foot">
-              <span>เปรียบเทียบกับอากาศภายใน</span
-              ><span id="out-status">ยังไม่มีข้อมูล</span>
+              <span>เปรียบเทียบกับอากาศภายใน</span><span id="out-status">ยังไม่มีข้อมูล</span>
             </div>
           </article>
         </div>
@@ -173,21 +129,16 @@
                 <span data-icon="activity"></span>
               </header>
               <div class="system-row">
-                <span class="system-label"
-                  ><span data-icon="wind"></span>พัดลมระบายอากาศ</span
-                ><span id="vent" class="badge">ไม่ทราบ</span>
+                <span class="system-label"><span data-icon="wind"></span>พัดลมระบายอากาศ</span><span id="vent" class="badge">ไม่ทราบ</span>
               </div>
               <div class="system-row">
-                <span class="system-label"
-                  ><span data-icon="filter"></span>พัดลมกรองอากาศ</span
-                ><span id="filt" class="badge">ไม่ทราบ</span>
+                <span class="system-label"><span data-icon="filter"></span>พัดลมกรองอากาศ</span><span id="filt" class="badge">ไม่ทราบ</span>
               </div>
               <div class="system-row">
                 <span class="muted">ก๊าซภายนอก</span><span id="out-gas">—</span>
               </div>
               <div class="system-row">
-                <span class="muted">อัปเดตล่าสุด</span
-                ><small id="last-seen">ยังไม่มีข้อมูล</small>
+                <span class="muted">อัปเดตล่าสุด</span><small id="last-seen">ยังไม่มีข้อมูล</small>
               </div>
             </section>
           </div>
@@ -200,11 +151,7 @@
               <div class="legend"><span>ภายใน</span><span>ภายนอก</span></div>
             </header>
             <div class="chart-wrap">
-              <canvas
-                id="pm-chart"
-                aria-label="กราฟค่าเฉลี่ย PM2.5"
-                role="img"
-              ></canvas>
+              <canvas id="pm-chart" aria-label="กราฟค่าเฉลี่ย PM2.5" role="img"></canvas>
             </div>
             <p class="chart-caption" id="chart-note">กำลังโหลดประวัติ…</p>
           </section>
@@ -215,7 +162,7 @@
               <h2>
                 การแจ้งเตือนวันนี้ <span class="badge" id="alert-count">0</span>
               </h2>
-              <p>เฉพาะอุปกรณ์นี้ · เก็บไว้ในเบราว์เซอร์นี้</p>
+              <p>ข้อมูลบอร์ดนี้ · เก็บไว้ในเบราว์เซอร์นี้</p>
             </div>
             <button id="clear-alerts" class="button quiet small">
               ล้างรายการ
@@ -226,11 +173,11 @@
         </section>
       </div>
       <footer class="footer-note">
-        <span>AirWatch / ทุกพื้นที่ เริ่มต้นที่อากาศ</span
-        ><span>ข้อมูลจากเซนเซอร์ · เกณฑ์ทดลองของโครงการ</span>
+        <span>AirWatch / ทุกพื้นที่ เริ่มต้นที่อากาศ</span><span>ข้อมูลจากเซนเซอร์ · เกณฑ์ทดลองของโครงการ</span>
       </footer>
     </main>
     <div id="dialogs"></div>
     <div class="toast" id="toast" role="status" hidden=""></div>
-  </body>
-</html>
+
+
+</body></html>

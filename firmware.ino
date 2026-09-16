@@ -36,24 +36,32 @@
   #include <esp_idf_version.h>
   #include <math.h>
   #include "sensor_filter.h"
+  #include "connection_config.h"
+  #include "tls_roots.h"
+  #include <WiFiClientSecure.h>
+  #include <time.h>
   #include <esp_task_wdt.h>     // ★ ไลบรารี Watchdog Timer ป้องกัน ESP32 ค้าง จะรีสตาร์ทอัตโนมัติ
 
   // =====================================================================
   // ตัวแปรเก็บ Server IP และระบบ UDP Auto-Discovery
   // =====================================================================
   Preferences preferences;
-  char server_ip[40] = "192.168.1.110";
+  char connectionCode[340] = "";
+  bool automaticServer = true;
+  bool connectionReady = false;
+  unsigned long setupButtonSince = 0;
+  bool setupRequested = false;
   char deviceKey[65] = ""; // Set in AirWatch-Setup; never commit a real key.
   unsigned int httpFailures = 0;
   bool watchdogReady = false;
-  char serverUrl[80] = "http://192.168.1.110:3000/api/log";
+  char serverUrl[256] = "";
   WiFiUDP udp;
   bool serverDiscovered = false;
   unsigned long lastDiscoveryAttempt = 0;
 
   // ฟังก์ชันยิงค้นหา IP ของคอมพิวเตอร์ในวง WiFi อัตโนมัติ (UDP Broadcast)
   void discoverServerIP() {
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (!automaticServer || WiFi.status() != WL_CONNECTED) return;
     
     udp.stop();
     udp.begin(41234);
@@ -229,48 +237,37 @@
       Serial.println("⚠️ ENS160 Not Found");  
     }
 
-    // โหลดค่า Server IP ล่าสุดจากความจำถาวร (ถ้าไม่มีให้ใช้ค่าเริ่มต้น 192.168.1.110)
+    pinMode(0, INPUT_PULLUP); // BOOT on the supported ESP32 Dev Module.
     preferences.begin("airwatch", false);
-    String saved_ip = preferences.getString("server_ip", "192.168.1.110");
-    saved_ip.toCharArray(server_ip, sizeof(server_ip));
-    preferences.getString("device_key", "").toCharArray(deviceKey, sizeof(deviceKey));
-    snprintf(serverUrl, sizeof(serverUrl), "http://%s:3000/api/log", server_ip);
-
-    // เชื่อมต่อ WiFi ผ่านระบบ WiFiManager (Captive Portal)
-    WiFiManager wm;
-    wm.setConnectTimeout(10);       // ลองพยายามต่อ WiFi เดิม 10 วินาที ถ้าหาไม่เจอให้เด้งปล่อย AirWatch-Setup ทันที
-    wm.setConfigPortalTimeout(180); // กำหนดเวลาหน้าป๊อบอัพ 3 นาทีหากไม่มีใครตั้งค่า ให้รีสตาร์ทรันต่อ
-
-    // เพิ่มช่องกรอก "Server IP" บนหน้าจอมือถือ
-    WiFiManagerParameter custom_server_ip("server_ip", "Server IP (เช่น 192.168.1.110)", server_ip, 40);
-    wm.addParameter(&custom_server_ip);
-    WiFiManagerParameter custom_device_key("device_key", "Device API key (16-64 characters)", deviceKey, 64);
-    wm.addParameter(&custom_device_key);
-
-    Serial.println("🌐 Connecting to WiFi via WiFiManager...");
-    bool res = strlen(deviceKey) < 16
-      ? wm.startConfigPortal("AirWatch-Setup")
-      : wm.autoConnect("AirWatch-Setup"); // ถ้าหา WiFi เดิมไม่เจอ จะปล่อย WiFi ชื่อ AirWatch-Setup
-
-    if (!res) {
-      Serial.println("❌ Failed to connect to WiFi or hit timeout");
-      preferences.end();
-    } else {
-      // บันทึกค่า Server IP ที่กรอกจากมือถือลงความจำถาวร (ถ้ามี)
-      if (strlen(custom_server_ip.getValue()) > 0) {
-        snprintf(server_ip, sizeof(server_ip), "%s", custom_server_ip.getValue());
-        preferences.putString("server_ip", server_ip);
-        snprintf(serverUrl, sizeof(serverUrl), "http://%s:3000/api/log", server_ip);
-      }
-      if (strlen(custom_device_key.getValue()) >= 16) {
-        snprintf(deviceKey, sizeof(deviceKey), "%s", custom_device_key.getValue());
-        preferences.putString("device_key", deviceKey);
-      }
-      preferences.end();
-      Serial.println("\n✅ WiFi Connected Successfully!");  
-      // ยิงค้นหา Server IP อัตโนมัติในวง WiFi ทันที
-      discoverServerIP();
+    preferences.getString("connection", "").toCharArray(connectionCode, sizeof(connectionCode));
+    if (!strlen(connectionCode)) {
+      String legacyKey = preferences.getString("device_key", "");
+      if (legacyKey.length() >= 16) snprintf(connectionCode, sizeof(connectionCode), "AUTO|%s", legacyKey.c_str());
     }
+    bool forceSetup = preferences.getBool("setup", false);
+    preferences.putBool("setup", false);
+    connectionReady = parseConnectionCode(connectionCode, serverUrl, sizeof(serverUrl), deviceKey, sizeof(deviceKey), automaticServer);
+    if (automaticServer) serverUrl[0] = '\0';
+    WiFiManager wm;
+    wm.setConnectTimeout(10);
+    wm.setConfigPortalTimeout(180);
+    WiFiManagerParameter connectionField("connection", "Connection code (copy from AirWatch website)", connectionCode, sizeof(connectionCode)-1);
+    wm.addParameter(&connectionField);
+    bool connected = (!connectionReady || forceSetup)
+      ? wm.startConfigPortal("AirWatch-Setup")
+      : wm.autoConnect("AirWatch-Setup");
+    if (connected) {
+      const char* value = connectionField.getValue();
+      connectionReady = parseConnectionCode(value, serverUrl, sizeof(serverUrl), deviceKey, sizeof(deviceKey), automaticServer);
+      if (connectionReady) {
+        snprintf(connectionCode, sizeof(connectionCode), "%s", value);
+        preferences.putString("connection", connectionCode);
+        if (automaticServer) { serverUrl[0] = '\0'; discoverServerIP(); }
+        else configTime(0, 0, "pool.ntp.org", "time.google.com");
+      } else Serial.println("Invalid connection code. Hold BOOT 3 seconds and release to configure again.");
+    }
+    preferences.end();
+    if (connectionReady && !automaticServer) configTime(0, 0, "pool.ntp.org", "time.google.com");
 
     // ★ เปิดพอร์ตเซนเซอร์ฝุ่นหลังจากต่อ WiFi เสร็จแล้วเท่านั้น (ป้องกัน Buffer ล้นค้าง)
     SerialPMS.begin(9600, SERIAL_8N1, 16, 17);
@@ -304,6 +301,19 @@
   // ฟังก์ชัน loop() - ทำงานวนซ้ำไปเรื่อยๆ
   // =====================================================================
   void loop() {
+    if (digitalRead(0) == LOW) {
+      if (!setupButtonSince) setupButtonSince = millis();
+      if (millis() - setupButtonSince >= 3000) setupRequested = true;
+    } else {
+      setupButtonSince = 0;
+      if (setupRequested) {
+        preferences.begin("airwatch", false);
+        preferences.putBool("setup", true);
+        preferences.end();
+        ESP.restart();
+      }
+    }
+
     // ★ เลี้ยง Watchdog Timer ทุกรอบ loop (ป้องกัน ESP32 รีสตาร์ทถ้าโค้ดทำงานปกติ)
     if (watchdogReady) esp_task_wdt_reset();
 
@@ -490,7 +500,7 @@
 
       if (WiFi.status() == WL_CONNECTED) {
         wifiLostSince = 0; // WiFi state is independent of HTTP success.
-        if (strlen(deviceKey) < 16) {
+        if (!connectionReady || strlen(deviceKey) < 16) {
           Serial.println("Configure a Device API key via AirWatch-Setup, then reboot");
           return;
         }
@@ -511,8 +521,26 @@
           Serial.println("Telemetry serialization failed");
           return;
         }
+        if (automaticServer && !strlen(serverUrl)) {
+          if (millis() - lastDiscoveryAttempt >= 30000) { lastDiscoveryAttempt = millis(); discoverServerIP(); }
+          return;
+        }
+        if (!automaticServer && time(nullptr) < 1700000000) {
+          Serial.println("Waiting for network time before verified HTTPS");
+          return;
+        }
+        WiFiClient plainClient;
+        WiFiClientSecure secureClient;
         HTTPClient http;
-        http.begin(serverUrl);
+        bool started;
+        if (automaticServer) started = http.begin(plainClient, serverUrl);
+        else {
+          secureClient.setCACert(AIRWATCH_ROOT_CA);
+          secureClient.setHandshakeTimeout(8);
+          started = http.begin(secureClient, serverUrl);
+        }
+        if (!started) { Serial.println("Cannot initialize telemetry connection"); return; }
+        http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
         http.addHeader("Content-Type", "application/json");
         http.addHeader("X-Device-Key", deviceKey);
         http.setConnectTimeout(HTTP_TIMEOUT);
@@ -527,7 +555,7 @@
           Serial.printf("Telemetry failed: HTTP %d\n", httpCode);
           if (httpCode == 401) Serial.println("Device API key does not match server configuration");
           // Back off discovery; do not repeatedly discover on payload/auth errors.
-          if (httpFailures >= 3 && (httpCode < 0 || httpCode >= 500) &&
+          if (automaticServer && httpFailures >= 3 && (httpCode < 0 || httpCode >= 500) &&
               millis() - lastDiscoveryAttempt >= 30000) {
             serverDiscovered = false;
             lastDiscoveryAttempt = millis();

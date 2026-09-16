@@ -53,10 +53,15 @@ function rateLimit(max = 20) {
     next();
   };
 }
-function createApp({ db, io, jwtSecret }) {
+function createApp({ db, io, jwtSecret, singleDeviceId }) {
   requireSecret(jwtSecret);
   const app = express();
   app.disable("x-powered-by");
+  if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
+  app.get("/healthz", async (req, res) => {
+    try { await query(db, "SELECT 1"); res.json({status:"ok"}); }
+    catch { res.status(503).json({status:"unavailable"}); }
+  });
   app.use((req, res, next) => {
     res.set("X-Content-Type-Options", "nosniff");
     res.set("Referrer-Policy", "same-origin");
@@ -152,76 +157,15 @@ function createApp({ db, io, jwtSecret }) {
     res.json({ token: signToken(user, jwtSecret), user });
   });
   app.get("/api/auth/me", auth, (req, res) => res.json(req.user));
-  const deviceColumns =
-    "id, device_name, owner_id, last_seen_at, created_at, (last_seen_at >= NOW() - INTERVAL 15 SECOND) AS is_online";
-  app.get("/api/devices", auth, async (req, res) =>
-    res.json(
-      await query(
-        db,
-        "SELECT " +
-          deviceColumns +
-          " FROM devices WHERE owner_id = ? ORDER BY id DESC",
-        [req.user.id],
-      ),
-    ),
-  );
-  app.post("/api/devices", auth, async (req, res) => {
-    const name = req.body?.device_name;
-    if (!valid.text(name, 1, 100))
-      return res
-        .status(400)
-        .json({ error: "ชื่ออุปกรณ์ต้องมี 1–100 ตัวอักษร" });
-    const key = randomBytes(24).toString("hex");
-    const r = await query(
-      db,
-      "INSERT INTO devices (device_key, device_name, owner_id) VALUES (?, ?, ?)",
-      [key, name.trim(), req.user.id],
-    );
-    res
-      .status(201)
-      .json({ id: r.insertId, device_name: name.trim(), device_key: key });
-  });
-  app.post("/api/devices/claim", auth, async (req, res) => {
-    const key = req.body?.device_key,
-      name = req.body?.device_name;
-    if (
-      !valid.deviceKey(key) ||
-      (name !== undefined && !valid.text(name, 1, 100))
-    )
-      return res.status(400).json({ error: "รหัสอุปกรณ์หรือชื่อไม่ถูกต้อง" });
-    const [d] = await query(
-      db,
-      "SELECT id, owner_id, device_key FROM devices WHERE device_key = ?",
-      [key],
-    );
-    if (!d || d.device_key !== key)
-      return res
-        .status(404)
-        .json({ error: "ไม่พบอุปกรณ์ กรุณาสร้างอุปกรณ์ใหม่เพื่อรับรหัส" });
-    if (d.owner_id === req.user.id)
-      return res.json({ id: d.id, message: "อุปกรณ์นี้เป็นของคุณแล้ว" });
-    if (d.owner_id !== null)
-      return res.status(409).json({ error: "อุปกรณ์มีเจ้าของแล้ว" });
-    const r = await query(
-      db,
-      "UPDATE devices SET owner_id = ?, device_name = COALESCE(?, device_name) WHERE id = ? AND owner_id IS NULL",
-      [req.user.id, name?.trim() || null, d.id],
-    );
-    if (r.affectedRows !== 1)
-      return res
-        .status(409)
-        .json({ error: "อุปกรณ์ถูกผูกกับบัญชีอื่นแล้ว กรุณาโหลดใหม่" });
-    res.json({ id: d.id, message: "ผูกอุปกรณ์สำเร็จ" });
-  });
   async function device(req, res, id) {
-    if (!valid.deviceId(id)) {
-      res.status(400).json({ error: "กรุณาเลือกอุปกรณ์" });
+    if (!singleDeviceId || (id !== undefined && Number(id) !== singleDeviceId)) {
+      res.status(404).json({ error: "ไม่พบบอร์ดที่ตั้งค่าไว้" });
       return null;
     }
     const [d] = await query(
       db,
       "SELECT id, device_name, owner_id FROM devices WHERE id = ?",
-      [Number(id)],
+      [singleDeviceId],
     );
     if (!d || (d.owner_id !== req.user.id && req.user.role !== "admin")) {
       res.status(404).json({ error: "ไม่พบอุปกรณ์ที่คุณมีสิทธิ์เข้าถึง" });
@@ -229,16 +173,20 @@ function createApp({ db, io, jwtSecret }) {
     }
     return d;
   }
-  app.get("/api/devices/:id/key", auth, async (req, res) => {
-    const d = await device(req, res, req.params.id);
+  app.get("/api/device", auth, async (req, res) => {
+    const d = await device(req, res);
+    if (d) res.json(d);
+  });
+  app.get("/api/device/key", auth, admin, async (req, res) => {
+    const d = await device(req, res);
     if (!d) return;
     const [r] = await query(db, "SELECT device_key FROM devices WHERE id = ?", [
       d.id,
     ]);
     res.json(r);
   });
-  app.post("/api/devices/:id/rotate-key", auth, async (req, res) => {
-    const d = await device(req, res, req.params.id);
+  app.post("/api/device/rotate-key", auth, admin, async (req, res) => {
+    const d = await device(req, res);
     if (!d) return;
     const key = randomBytes(24).toString("hex");
     await query(
@@ -261,6 +209,7 @@ function createApp({ db, io, jwtSecret }) {
     );
     if (
       !d ||
+      d.id !== singleDeviceId ||
       Buffer.byteLength(key) !== Buffer.byteLength(d.device_key) ||
       !timingSafeEqual(Buffer.from(key), Buffer.from(d.device_key))
     )
@@ -362,9 +311,10 @@ function createApp({ db, io, jwtSecret }) {
     const [u] = await query(db, "SELECT COUNT(*) AS cnt FROM users");
     const [d] = await query(
       db,
-      "SELECT COUNT(*) AS total, SUM(last_seen_at >= NOW() - INTERVAL 15 SECOND) AS online FROM devices",
+      "SELECT COUNT(*) AS total, SUM(last_seen_at >= NOW() - INTERVAL 15 SECOND) AS online FROM devices WHERE id = ?",
+      [singleDeviceId],
     );
-    const [s] = await query(db, "SELECT COUNT(*) AS cnt FROM sensor_data");
+    const [s] = await query(db, "SELECT COUNT(*) AS cnt FROM sensor_data WHERE device_id = ?", [singleDeviceId]);
     res.json({
       totalUsers: u.cnt,
       totalDevices: d.total,
@@ -378,7 +328,8 @@ function createApp({ db, io, jwtSecret }) {
         db,
         `SELECT d.id,d.device_name,d.owner_id,d.last_seen_at,d.created_at,
         (d.last_seen_at >= NOW() - INTERVAL 15 SECOND) AS is_online,u.username AS owner_username
-        FROM devices d LEFT JOIN users u ON u.id=d.owner_id ORDER BY d.id DESC`,
+        FROM devices d LEFT JOIN users u ON u.id=d.owner_id WHERE d.id = ?`,
+        [singleDeviceId],
       ),
     ),
   );
@@ -437,20 +388,9 @@ async function startServer() {
   const db = createPool();
   await query(db, "SELECT id,device_id FROM sensor_data LIMIT 0");
   await query(db, "SELECT id,owner_id FROM devices LIMIT 0");
-  const key = process.env.DEVICE_API_KEY;
-  if (key) {
-    if (!valid.deviceKey(key) || key === DEMO_KEY)
-      throw new Error(
-        "Replace the demo DEVICE_API_KEY with a private 16–64 character key",
-      );
-    await query(
-      db,
-      "INSERT INTO devices (device_key,device_name) VALUES (?,'Existing AirWatch') ON DUPLICATE KEY UPDATE id=id",
-      [key],
-    );
-  }
+  const singleDeviceId = await require('./lib/single-board').provisionBoard(db, process.env);
   let io;
-  const app = createApp({ db, io: { to: (room) => io.to(room) }, jwtSecret });
+  const app = createApp({ db, io: { to: (room) => io.to(room) }, jwtSecret, singleDeviceId });
   const server = http.createServer(app);
   io = new Server(server);
   attachSocketAuth(io, { db, jwtSecret });
@@ -484,6 +424,7 @@ async function startServer() {
   return { server, io, db, udp };
 }
 module.exports = {
+  startServer,
   createApp,
   attachSocketAuth,
   signToken,

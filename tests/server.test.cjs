@@ -76,6 +76,7 @@ async function start(t) {
   const app = createApp({
     db: f.db,
     jwtSecret: secret,
+    singleDeviceId: 1,
     io: { to: (r) => io.to(r) },
   });
   const server = app.listen(0, "127.0.0.1");
@@ -119,12 +120,18 @@ test("read and key endpoints enforce ownership; only public files served", async
   for (const path of ["/api/latest", "/api/history", "/api/history/daily"]) {
     assert.equal((await request(path + "?device_id=1")).status, 401);
     assert.equal((await request(path + "?device_id=2", 1)).status, 404);
-    assert.equal((await request(path + "?device_id=1", 1)).status, 200);
-    assert.equal((await request(path + "?device_id=2", 3)).status, 200);
+    assert.equal((await request(path, 1)).status, 200);
+    assert.equal((await request(path, 2)).status, 404);
+    assert.equal((await request(path + "?device_id=2", 3)).status, 404);
   }
   assert.equal((await request("/api/devices/2/key", 1)).status, 404);
   assert.equal((await request("/api/devices/2/rotate-key", 1, {})).status, 404);
   assert.equal((await request("/api/admin/users", 1)).status, 403);
+  assert.equal((await request("/api/device/key", 1)).status, 403);
+  assert.equal((await request("/api/device/key", 3)).status, 200);
+  assert.equal((await request("/api/device/rotate-key", 1, {})).status, 403);
+  assert.equal((await request("/api/device", 1)).status, 200);
+  assert.equal((await request("/api/device", 2)).status, 404);
   for (const p of [
     "/server.js",
     "/db/schema.sql",
@@ -145,7 +152,7 @@ test("read and key endpoints enforce ownership; only public files served", async
     /script-src 'self'/,
   );
 });
-test("public registration never grants admin and concurrent claims have one winner", async (t) => {
+test("public registration never grants admin and multi-device creation is removed", async (t) => {
   const { request, devices } = await start(t);
   const regs = await Promise.all(
     [1, 2].map((i) =>
@@ -161,20 +168,9 @@ test("public registration never grants admin and concurrent claims have one winn
     assert.equal(r.status, 201);
     assert.equal((await r.json()).user.role, "user");
   }
-  const claims = await Promise.all(
-    [1, 2].map((u) =>
-      request("/api/devices/claim", u, { device_key: devices[2].device_key }),
-    ),
-  );
-  assert.deepEqual(claims.map((r) => r.status).sort(), [200, 409]);
-  assert.equal(
-    (
-      await request("/api/devices/claim", 1, {
-        device_key: "unknown-test-private-key",
-      })
-    ).status,
-    404,
-  );
+  for (const path of ['/api/devices','/api/devices/claim']) {
+    assert.equal((await request(path, 3, {device_key:devices[2].device_key})).status,404);
+  }
 });
 test("device credentials and socket rooms isolate telemetry", async (t) => {
   const { request, base, users, writes, devices } = await start(t);
@@ -207,7 +203,7 @@ test("device credentials and socket rooms isolate telemetry", async (t) => {
     ).status,
     401,
   );
-  for (const d of devices.slice(0, 2)) {
+  for (const d of devices.slice(0, 1)) {
     const delivered = once(sockets[d.id - 1], "sensorData");
     assert.equal(
       (await request("/api/log", null, sample, d.device_key)).status,
@@ -215,14 +211,15 @@ test("device credentials and socket rooms isolate telemetry", async (t) => {
     );
     await delivered;
   }
+  assert.equal((await request("/api/log", null, sample, devices[1].device_key)).status,401);
   await new Promise((r) => setTimeout(r, 60));
   assert.deepEqual(
     received.map((a) => a.map((d) => d.device_id)),
-    [[1], [2], [1, 2]],
+    [[1], [], [1]],
   );
   assert.deepEqual(
     writes.map((a) => a[0]),
-    [1, 2],
+    [1],
   );
   assert.equal(writes[0][2], null);
 });

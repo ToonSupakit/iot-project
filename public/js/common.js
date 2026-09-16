@@ -139,8 +139,7 @@ window.App = (() => {
     document.querySelector(".topline")?.remove();
     $("dialogs").innerHTML =
       `<dialog id="logout-dialog" aria-labelledby="logout-title"><div class="dialog-head"><h2 id="logout-title">ออกจากระบบ?</h2><button class="button icon-button" data-close="logout-dialog" aria-label="ปิด"><span data-icon="close"></span></button></div><p class="dialog-copy">อุปกรณ์ยังทำงานตามปกติ คุณกลับมาเข้าสู่ระบบเพื่อดูข้อมูลได้เสมอ</p><div class="dialog-actions"><button class="button" data-close="logout-dialog">อยู่ต่อ</button><button class="button primary" id="confirm-logout">ออกจากระบบ</button></div></dialog>
-        <dialog id="device-dialog" aria-labelledby="device-title"><div class="dialog-head"><h2 id="device-title">เชื่อมต่อพื้นที่ใหม่</h2><button class="button icon-button" data-close="device-dialog" aria-label="ปิด"><span data-icon="close"></span></button></div><p class="dialog-copy">เพิ่มอุปกรณ์ใหม่ หรือผูกอุปกรณ์เดิมที่ยังไม่มีเจ้าของ</p><div class="segmented" role="tablist" aria-label="วิธีเพิ่มอุปกรณ์"><button type="button" id="mode-create" role="tab" aria-selected="true">สร้างอุปกรณ์ใหม่</button><button type="button" id="mode-claim" role="tab" aria-selected="false">ผูกอุปกรณ์เดิม</button></div><div class="banner error" id="device-error" role="alert" hidden></div><form class="form" id="device-form"><div class="field"><label for="device-name">ชื่อพื้นที่ / อุปกรณ์</label><input id="device-name" maxlength="100" placeholder="เช่น ห้องนั่งเล่น" required></div><div class="field" id="claim-field" hidden><label for="claim-key">รหัสอุปกรณ์เดิม</label><input id="claim-key" class="key-output" minlength="16" maxlength="64" autocomplete="off" spellcheck="false"></div><div class="dialog-actions"><button type="button" class="button" data-close="device-dialog">ยกเลิก</button><button class="button primary" id="save-device" type="submit">สร้างและรับรหัส</button></div></form></dialog>
-        <dialog id="key-dialog" aria-labelledby="key-title"><div class="dialog-head"><h2 id="key-title">รหัสเชื่อมต่ออุปกรณ์</h2><button class="button icon-button" data-close="key-dialog" aria-label="ปิด"><span data-icon="close"></span></button></div><p class="dialog-copy">ใช้รหัสนี้กับบอร์ดของอุปกรณ์ที่เลือกเท่านั้น</p><div class="field"><label for="device-key-value">Device API key</label><input id="device-key-value" class="key-output" readonly spellcheck="false"></div><div class="actions"><button class="button small" id="copy-key">คัดลอกรหัส</button><button class="button quiet small" id="rotate-key">เปลี่ยนรหัสใหม่</button></div><div class="key-note"><strong>เชื่อมต่อบอร์ด</strong><ol><li>เปิดหน้าตั้งค่า AirWatch-Setup</li><li>กรอก Device API key นี้ พร้อม Wi-Fi และ Server IP</li><li>บันทึก แล้วกลับมารอข้อมูลบนแดชบอร์ด</li></ol>หากรหัสอยู่ในค่าตั้งเดิม ให้ล้าง NVS/Flash แล้วตั้งบอร์ดใหม่ตาม README</div><div class="dialog-actions"><button class="button primary" data-close="key-dialog">เรียบร้อย</button></div></dialog>
+        <dialog id="key-dialog" aria-labelledby="key-title"><div class="dialog-head"><h2 id="key-title">เชื่อมต่อ ESP32</h2><button class="button icon-button" data-close="key-dialog" aria-label="ปิด"><span data-icon="close"></span></button></div><p class="dialog-copy">คัดลอกรหัสตั้งค่านี้ไปวางในหน้าตั้งค่า Wi-Fi ของบอร์ดครั้งแรก บอร์ดจะจำการเชื่อมต่อเอง</p><div class="field"><label for="device-key-value">รหัสตั้งค่าบอร์ด</label><input id="device-key-value" class="key-output" readonly spellcheck="false"></div><div class="actions"><button class="button small" id="copy-key">คัดลอกรหัส</button><button class="button quiet small" id="rotate-key">เปลี่ยนรหัสใหม่</button></div><div class="key-note"><strong>เชื่อมต่อบอร์ด</strong><ol><li>เปิดหน้าตั้งค่า AirWatch-Setup</li><li>เลือก Wi-Fi และวางรหัสตั้งค่าบอร์ดนี้ในช่อง Connection code</li><li>บันทึก แล้วกลับมารอข้อมูลบนแดชบอร์ด</li></ol>ต้องการตั้งค่าใหม่: กดปุ่ม BOOT ค้างประมาณ 3 วินาทีขณะบอร์ดทำงาน แล้วเชื่อม AirWatch-Setup</div><div class="dialog-actions"><button class="button primary" data-close="key-dialog">เรียบร้อย</button></div></dialog>
         <dialog id="rotate-dialog" aria-labelledby="rotate-title"><h2 id="rotate-title">เปลี่ยนรหัสอุปกรณ์?</h2><p class="dialog-copy">รหัสเดิมจะใช้ไม่ได้ และบอร์ดจะหยุดส่งข้อมูลจนกว่าคุณจะใส่รหัสใหม่</p><div class="dialog-actions"><button class="button" data-close="rotate-dialog">ยกเลิก</button><button class="button primary" id="confirm-rotate">เปลี่ยนรหัส</button></div></dialog>`;
     document
       .querySelectorAll("[data-close]")
@@ -153,64 +152,16 @@ window.App = (() => {
         b.addEventListener("click", () => $("logout-dialog").showModal()),
       );
     $("confirm-logout").addEventListener("click", logout);
-    document.querySelectorAll("[data-add-device]").forEach((b) =>
-      b.addEventListener("click", () => {
-        setMode(false);
-        $("device-form").reset();
-        $("device-error").hidden = true;
-        $("device-dialog").showModal();
-      }),
-    );
-    let claiming = false,
-      keyId = null;
-    function setMode(value) {
-      claiming = value;
-      $("mode-create").setAttribute("aria-selected", String(!value));
-      $("mode-claim").setAttribute("aria-selected", String(value));
-      $("claim-field").hidden = !value;
-      $("claim-key").required = value;
-      $("save-device").textContent = value ? "ผูกอุปกรณ์" : "สร้างและรับรหัส";
+    function showKey(key) {
+      const address = location.origin + '/api/log';
+      const local = location.protocol !== 'https:';
+      $('device-key-value').value = (local ? 'AUTO' : address) + '|' + key;
+      $('key-dialog').showModal();
     }
-    $("mode-create").addEventListener("click", () => setMode(false));
-    $("mode-claim").addEventListener("click", () => setMode(true));
-    async function showKey(id, key) {
-      keyId = id;
-      $("device-key-value").value = key;
-      $("key-dialog").showModal();
-    }
-    $("device-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const button = $("save-device");
-      button.disabled = true;
-      $("device-error").hidden = true;
-      try {
-        const result = await api(
-          claiming ? "/api/devices/claim" : "/api/devices",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              device_name: $("device-name").value.trim(),
-              ...(claiming ? { device_key: $("claim-key").value.trim() } : {}),
-            }),
-          },
-        );
-        $("device-dialog").close();
-        await loadDevices(result.id);
-        window.dispatchEvent(new Event("airwatch-device"));
-        if (result.device_key) await showKey(result.id, result.device_key);
-        else toast("ผูกอุปกรณ์สำเร็จ");
-      } catch (err) {
-        $("device-error").textContent = err.message;
-        $("device-error").hidden = false;
-      } finally {
-        button.disabled = false;
-      }
-    });
     $("device-key")?.addEventListener("click", async () => {
       try {
-        const id = selected();
-        const r = await api("/api/devices/" + id + "/key");
-        await showKey(id, r.device_key);
+        const r = await api("/api/device/key");
+        await showKey(r.device_key);
       } catch (err) {
         error(err.message);
       }
@@ -232,10 +183,10 @@ window.App = (() => {
       const b = $("confirm-rotate");
       b.disabled = true;
       try {
-        const r = await api("/api/devices/" + keyId + "/rotate-key", {
+        const r = await api("/api/device/rotate-key", {
           method: "POST",
         });
-        $("device-key-value").value = r.device_key;
+        showKey(r.device_key);
         $("rotate-dialog").close();
         toast("เปลี่ยนรหัสแล้ว กรุณาตั้งค่าใหม่บนบอร์ด");
         window.dispatchEvent(new Event("airwatch-device"));
@@ -250,42 +201,19 @@ window.App = (() => {
       () => ($("device-key-value").value = ""),
     );
   }
-  function selected() {
-    return Number($("device-select")?.value) || 0;
-  }
+  function selected() { return devices[0]?.id || 0; }
   function syncLinks() {
-    const id = selected();
-    if (user) localStorage.setItem("airwatch-device:" + user.id, String(id));
-    document.querySelectorAll("[data-nav]").forEach((a) => {
-      if (a.dataset.nav !== "admin")
-        a.href =
-          (a.dataset.nav === "history" ? "/history.html" : "/") +
-          (id ? "?device_id=" + id : "");
+    document.querySelectorAll('[data-nav]').forEach(a => {
+      if (a.dataset.nav !== 'admin') a.href = a.dataset.nav === 'history' ? '/history.html' : '/';
     });
   }
-  async function loadDevices(preferred) {
-    devices = await api(
-      user.role === "admin" ? "/api/admin/devices" : "/api/devices",
-    );
-    const select = $("device-select");
-    if (!select) return devices;
-    const candidate = Number(
-      preferred ||
-        new URLSearchParams(location.search).get("device_id") ||
-        localStorage.getItem("airwatch-device:" + user.id),
-    );
-    select.replaceChildren();
-    for (const d of devices) {
-      const o = document.createElement("option");
-      o.value = d.id;
-      o.textContent = d.device_name;
-      select.append(o);
-    }
-    if (devices.some((d) => d.id === candidate)) select.value = candidate;
-    select.disabled = !devices.length;
-    $("no-devices").hidden = !!devices.length;
-    $("device-content").hidden = !devices.length;
-    if ($("device-key")) $("device-key").disabled = !devices.length;
+  async function loadDevices() {
+    const board = await api('/api/device');
+    devices = [board];
+    if ($('board-name')) $('board-name').textContent = board.device_name;
+    if ($('no-devices')) $('no-devices').hidden = true;
+    if ($('device-content')) $('device-content').hidden = false;
+    if ($('device-key')) { $('device-key').disabled = false; $('device-key').hidden = user.role !== 'admin'; }
     syncLinks();
     return devices;
   }

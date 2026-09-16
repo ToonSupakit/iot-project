@@ -79,3 +79,12 @@ test("seed never overwrites existing credentials implicitly", async () => {
   assert.match(last, /^UPDATE users SET password_hash/);
   assert.doesNotMatch(last, /role/);
 });
+const {provisionBoard}=require('../lib/single-board');
+test('one-board startup preserves existing keys, rejects ambiguity, provisions automatically',async()=>{
+ const db=rows=>({query(sql,p,cb){if(sql.startsWith('SELECT id, device_key'))return cb(null,rows);if(sql.startsWith('SELECT id FROM users'))return cb(null,[{id:7}]);assert.match(sql,/^INSERT INTO devices/);assert.equal(p[2],7);assert.equal(p[0].length,48);cb(null,{insertId:9});}});
+ assert.equal(await provisionBoard(db([{id:4,device_key:'unchanged'}])),4);
+ assert.equal(await provisionBoard(db([])),9);
+ await assert.rejects(provisionBoard(db([{id:1},{id:2}])),/Multiple existing/);
+ assert.equal(await provisionBoard(db([{id:1},{id:2}]),{SINGLE_DEVICE_ID:'2'}),2);
+ await assert.rejects(provisionBoard(db([{id:1}]),{SINGLE_DEVICE_ID:'99'}),/does not exist/);
+});

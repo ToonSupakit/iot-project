@@ -80,7 +80,6 @@
       }
     }
   }
-  $("device-select").addEventListener("change", load);
   window.addEventListener("airwatch-device", load);
   $("refresh").addEventListener("click", async () => {
     const b = $("refresh");
