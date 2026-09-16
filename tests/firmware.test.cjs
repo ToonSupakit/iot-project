@@ -5,7 +5,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-test('firmware filtering recovers, crosses thresholds and handles timestamp rollover', () => {
+test('firmware filtering recovers, crosses thresholds and handles timestamp rollover', t => {
+  const compiler = spawnSync('g++', ['--version'], {encoding:'utf8'});
+  if (compiler.error?.code === 'ENOENT' && !process.env.CI) {
+    t.skip('Host C++ compiler unavailable; firmware tests run in GitHub Actions');
+    return;
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'airwatch-firmware-'));
   try {
     fs.writeFileSync(path.join(dir, 'test.cpp'), `
