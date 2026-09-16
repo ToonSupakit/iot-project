@@ -78,7 +78,7 @@ function createApp({ db, io, apiKey }) {
                    FLOOR(UNIX_TIMESTAMP(created_at) / 600) * 600000 AS bucket_ms
             FROM sensor_data
             WHERE created_at >= NOW() - INTERVAL 3 HOUR
-            GROUP BY FLOOR(UNIX_TIMESTAMP(created_at) / 600)
+            GROUP BY bucket_ms
             ORDER BY bucket_ms DESC LIMIT 18
         ) AS recent ORDER BY bucket_ms ASC`);
     });
@@ -91,7 +91,7 @@ function createApp({ db, io, apiKey }) {
             ROUND(AVG(out_gas), 1) AS avg_out_gas
             FROM sensor_data
             WHERE created_at >= NOW() - INTERVAL 30 DAY
-            GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d')
+            GROUP BY date
             ORDER BY date DESC LIMIT 30`);
     });
     app.use((err, req, res, next) => {
