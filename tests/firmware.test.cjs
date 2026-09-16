@@ -41,6 +41,22 @@ int main() {
   assert(!validClimate(NAN,50));
   assert(!validClimate(25,101));
   assert(!validClimate(90,50));
+  EnsRecovery ens; ens.started(0);
+  assert(!ens.due(59999,false,3));
+  assert(ens.due(60000,false,3));
+  // Normal warm-up and first-hour conditioning must not be reset every minute.
+  assert(!ens.due(180000,true,1));
+  assert(ens.due(300000,true,1));
+  assert(!ens.due(3600000,true,2));
+  assert(ens.due(3900000,true,2));
+  ens.good(4000000);
+  assert(!ens.due(4059999,true,0));
+  assert(ens.due(4060000,true,0));
+  ens.started(4060000);
+  assert(!ens.due(4061000,false,3));
+  ens.started(UINT32_MAX-1000);
+  assert(!ens.due(1000,false,3));
+  assert(ens.due(60000,false,3));
 }
 `);
     const binary = path.join(dir, 'test');
