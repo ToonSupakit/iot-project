@@ -24,7 +24,8 @@ function harness() {
         createElement: element, body: element(), documentElement: element()
     };
     const context = vm.createContext({
-        document, window: {}, console,
+        // Keep VM debug logs out of node:test's binary child-process protocol.
+        document, window: {}, console: { log() {}, error: (...args) => console.error(...args) },
         localStorage: { getItem: key => storage[key] || null, setItem: (key, value) => storage[key] = value },
         io: () => ({ on: (name, fn) => handlers[name] = fn }),
         fetch: async url => ({ ok: true, json: async () => url === '/api/latest' ? {} : history }),

@@ -16,3 +16,25 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+        with:
+          version: '1.2.2'
+      - name: Install supported board and libraries
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.0.7 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli lib install "WiFiManager@2.0.17" "Adafruit AHTX0@2.0.6" "SparkFun Indoor Air Quality Sensor - ENS160@1.1.0" "PMS Library@1.1.0"
+      - name: Compile complete ESP32 firmware
+        run: |
+          mkdir -p build/firmware
+          cp firmware.ino build/firmware/
+          arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir build/output build/firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AirWatch-ESP32-firmware
+          path: build/output/
