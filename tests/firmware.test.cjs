@@ -13,8 +13,16 @@ test('firmware filtering recovers, crosses thresholds and handles timestamp roll
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'airwatch-firmware-'));
   try {
+    const sketch = fs.readFileSync(path.join(__dirname, '..', 'firmware.ino'), 'utf8');
+    const match = sketch.match(/\/\/ ===== Sensor processing[\s\S]*?\n\s*\/\/ ===== End sensor processing =====/);
+    assert.ok(match, 'sensor processing block was not found in firmware.ino');
+    const processing = match[0]
+      .replace(/^\s*\/\/ ===== Sensor processing.*\n/, '')
+      .replace(/\n\s*\/\/ ===== End sensor processing =====$/, '')
+      .replace(/^\s{2}/gm, '');
+    fs.writeFileSync(path.join(dir, 'sensor_processing_under_test.h'), '#include <stdint.h>\n#include <math.h>\n' + processing);
     fs.writeFileSync(path.join(dir, 'test.cpp'), `
-#include "sensor_processing.h"
+#include "sensor_processing_under_test.h"
 #include <cassert>
 int main() {
   SensorEma pm;
@@ -60,7 +68,7 @@ int main() {
 }
 `);
     const binary = path.join(dir, 'test');
-    const compile = spawnSync('g++', ['-std=c++11', '-Wall', '-Wextra', '-Werror', '-I', path.join(__dirname,'..'), path.join(dir,'test.cpp'), '-o',binary], {encoding:'utf8'});
+    const compile = spawnSync('g++', ['-std=c++11', '-Wall', '-Wextra', '-Werror', '-I', dir, path.join(dir,'test.cpp'), '-o',binary], {encoding:'utf8'});
     assert.equal(compile.status,0,compile.stderr || String(compile.error));
     const run = spawnSync(binary, [], {encoding:'utf8'});
     assert.equal(run.status,0,run.stderr);

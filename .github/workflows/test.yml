@@ -32,7 +32,7 @@ jobs:
       - name: Compile complete ESP32 firmware
         run: |
           mkdir -p build/firmware
-          cp firmware.ino sensor_processing.h build/firmware/
+          cp firmware.ino build/firmware/
           arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir build/output build/firmware
       - uses: actions/upload-artifact@v4
         with:
